@@ -9,6 +9,9 @@ option java_package = "com.trading.connection.grpc";
 service MarketDataService {
   // Streams real-time market data ticks (Server Streaming)
   rpc StreamMarketData (MarketDataRequest) returns (stream MarketDataResponse);
+
+  // Queries historical bars for strategy warm-up (Unary)
+  rpc GetHistoricalBars (HistoricalBarsRequest) returns (HistoricalBarsResponse);
 }
 
 // Order Operations Interface
@@ -70,3 +73,13 @@ message OrderStatusResponse {
   string client_order_id = 8;
   string provider = 9; // The executing broker identifier
 }
+
+message HistoricalBarsRequest {
+  string symbol = 1;
+  int32 limit = 2; // number of warm-up bars to fetch
+}
+
+message HistoricalBarsResponse {
+  repeated MarketDataResponse bars = 1;
+}
+

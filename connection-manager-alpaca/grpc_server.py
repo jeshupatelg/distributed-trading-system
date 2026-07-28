@@ -98,11 +98,14 @@ class MarketDataServicer(
     gRPC Servicer implementation for MarketDataService.
     """
 
-    def __init__(self, broadcaster: gRPCStreamBroadcaster):
+    def __init__(self, broadcaster: gRPCStreamBroadcaster, rest_client: AlpacaRestClient):
         """
-        Initialize the servicer with broadcaster.
+        Initialize the servicer with broadcaster and rest_client.
         """
         self.broadcaster = broadcaster
+        self.rest_client = rest_client
+        self.thread_pool = ThreadPoolExecutor(max_workers=5)
+        self.loop = asyncio.get_event_loop()
 
     async def StreamMarketData(self, request, context):
         """
@@ -115,11 +118,57 @@ class MarketDataServicer(
                 if context.done():
                     break
                 response = await queue.get()
+                logger.info(
+                    "Pushing tick to gRPC stream: symbol=%s close=%s timestamp=%s",
+                    response.symbol,
+                    response.close,
+                    response.timestamp,
+                )
                 yield response
         except asyncio.CancelledError:
             logger.info("Market data stream connection cancelled by client.")
         finally:
             self.broadcaster.unregister_client(queue)
+
+    async def GetHistoricalBars(self, request, context):
+        """
+        gRPC Unary method to fetch historical bars for strategy warm-up.
+        """
+        logger.info("GetHistoricalBars request: symbol=%s, limit=%d", request.symbol, request.limit)
+        try:
+            # Offload blocking REST query to thread pool executor
+            bars = await self.loop.run_in_executor(
+                self.thread_pool,
+                self.rest_client.get_historical_bars,
+                request.symbol,
+                request.limit,
+            )
+
+            bar_responses = []
+            for bar in bars:
+                timestamp_str = (
+                    bar.timestamp.isoformat()
+                    if hasattr(bar.timestamp, "isoformat")
+                    else str(bar.timestamp)
+                )
+                bar_responses.append(
+                    connection_manager_pb2.MarketDataResponse(
+                        symbol=request.symbol,
+                        open=float(bar.open),
+                        high=float(bar.high),
+                        low=float(bar.low),
+                        close=float(bar.close),
+                        volume=int(bar.volume),
+                        timestamp=timestamp_str,
+                        provider="alpaca",
+                    )
+                )
+            return connection_manager_pb2.HistoricalBarsResponse(bars=bar_responses)
+        except Exception as e:
+            logger.error("Error retrieving historical bars: %s", e)
+            context.set_details(str(e))
+            context.set_code(grpc.StatusCode.INTERNAL)
+            return connection_manager_pb2.HistoricalBarsResponse()
 
 
 class OrderExecutionServicer(
@@ -249,7 +298,7 @@ async def start_grpc_server(
     import grpc.aio
 
     server = grpc.aio.server()
-    market_servicer = MarketDataServicer(broadcaster)
+    market_servicer = MarketDataServicer(broadcaster, rest_client)
     order_servicer = OrderExecutionServicer(rest_client)
     
     connection_manager_pb2_grpc.add_MarketDataServiceServicer_to_server(

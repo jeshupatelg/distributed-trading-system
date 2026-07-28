@@ -70,15 +70,51 @@ async def consume_market_data(strategy: BaseStrategy, publisher: KafkaSignalPubl
             async with grpc.aio.insecure_channel(config.CONNECTION_MANAGER_ENDPOINT) as channel:
                 # Use MarketDataServiceStub instead of ConnectionManagerServiceStub
                 stub = connection_manager_pb2_grpc.MarketDataServiceStub(channel)
-                req = connection_manager_pb2.MarketDataRequest(symbols=[config.TICKER])
+                # 1. Warm-up Phase: Query GetHistoricalBars via Envoy Load Balancer
+                # Determine limit size dynamically from strategy parameters (e.g. slow_period or period)
+                warmup_limit = max(
+                    config.STRATEGY_PARAMS.get("slow_period", 0),
+                    config.STRATEGY_PARAMS.get("period", 0),
+                    30
+                ) + 5
                 
-                # Initiate gRPC server streaming subscription
-                # We also attach the x-ticker header so the load balancer routes correctly
                 metadata = (("x-ticker", config.TICKER),)
+                logger.info(f"Warming up strategy {config.STRATEGY_CLASS_NAME} with {warmup_limit} historical bars...")
+                try:
+                    hist_req = connection_manager_pb2.HistoricalBarsRequest(
+                        symbol=config.TICKER,
+                        limit=warmup_limit
+                    )
+                    hist_response = await stub.GetHistoricalBars(hist_req, metadata=metadata, timeout=10.0)
+                    
+                    # Feed bars to strategy to pre-populate indicator deques, suppressing signal publishing
+                    warmed_count = 0
+                    for bar_proto in hist_response.bars:
+                        bar_dict = {
+                            "symbol": bar_proto.symbol,
+                            "open": bar_proto.open,
+                            "high": bar_proto.high,
+                            "low": bar_proto.low,
+                            "close": bar_proto.close,
+                            "volume": bar_proto.volume,
+                            "timestamp": bar_proto.timestamp,
+                            "provider": bar_proto.provider
+                        }
+                        strategy.on_bar(bar_dict)
+                        warmed_count += 1
+                    logger.info(f"Warm-up complete. Pre-populated strategy cache with {warmed_count} bars.")
+                except Exception as ex:
+                    logger.warning(f"Strategy warm-up failed: {ex}. Proceeding with cold start...")
+
+                # 2. Live Streaming Phase: Subscribe to StreamMarketData
+                req = connection_manager_pb2.MarketDataRequest(symbols=[config.TICKER])
                 stream = stub.StreamMarketData(req, metadata=metadata)
-                
                 logger.info(f"Subscribed successfully to {config.TICKER} feed. Consuming stream...")
                 async for bar_proto in stream:
+                    logger.info(
+                        f"Received tick via gRPC: symbol={bar_proto.symbol} "
+                        f"close={bar_proto.close} timestamp={bar_proto.timestamp}"
+                    )
                     bar_dict = {
                         "symbol": bar_proto.symbol,
                         "open": bar_proto.open,

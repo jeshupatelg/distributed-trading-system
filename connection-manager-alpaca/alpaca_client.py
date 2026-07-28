@@ -98,6 +98,42 @@ class AlpacaRestClient:
         logger.info("Querying order status for ID: %s", order_id)
         return self.client.get_order_by_id(order_id)
 
+    def get_historical_bars(self, symbol: str, limit: int):
+        """
+        Retrieve the latest historical minute bars for a ticker to support strategy warmup.
+
+        Args:
+            symbol (str): The target ticker symbol.
+            limit (int): Number of bars to retrieve.
+        """
+        from alpaca.data.historical import StockHistoricalDataClient
+        from alpaca.data.requests import StockBarsRequest
+        from alpaca.data.timeframe import TimeFrame
+        from datetime import datetime, timedelta, timezone
+
+        logger.info("Fetching last %d historical minute bars for symbol: %s", limit, symbol)
+        
+        # Instantiate historical data client using existing credentials
+        client = StockHistoricalDataClient(
+            api_key=config.ALPACA_API_KEY,
+            secret_key=config.ALPACA_SECRET_KEY,
+        )
+        
+        # Query window: Look back up to 5 days to ensure we bypass weekends and market closures
+        start_time = datetime.now(timezone.utc) - timedelta(days=5)
+        
+        req = StockBarsRequest(
+            symbol_or_symbols=symbol,
+            timeframe=TimeFrame.Minute,
+            start=start_time,
+            limit=limit,
+        )
+        
+        bars_response = client.get_stock_bars(req)
+        
+        # Extract the list of bar objects for this symbol
+        return bars_response.data.get(symbol, [])
+
 
 class AlpacaStreamClient:
     """
