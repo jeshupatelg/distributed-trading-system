@@ -1,0 +1,38 @@
+# Default values for connection-manager-alpaca subchart.
+
+replicaCount: 1
+
+image:
+  repository: trading-poc/connection-manager-alpaca
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  httpPort: 8000
+  grpcPort: 50051
+
+config:
+  alpacaBaseUrl: "https://paper-api.alpaca.markets"
+  alpacaDataFeed: "iex"
+  kafkaBootstrapServers: "kafka:9092"
+  kafkaTopicRawOrderUpdates: "raw-order-updates"
+  tickersToTrack: "AAPL,MSFT"
+  logLevel: "INFO"
+
+secret:
+  alpacaApiKey: "PLACEHOLDER_ALPACA_API_KEY"
+  alpacaSecretKey: "PLACEHOLDER_ALPACA_SECRET_KEY"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+probes:
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3

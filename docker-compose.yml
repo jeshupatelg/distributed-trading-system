@@ -1,0 +1,106 @@
+version: '3.8'
+
+services:
+  # Alpaca Connection Manager (Stateless gateway)
+  connection-manager-alpaca:
+    build:
+      context: ./connection-manager-alpaca
+      dockerfile: Dockerfile
+    container_name: connection-manager-alpaca
+    ports:
+      - "8000:8000"    # FastAPI HTTP REST Port
+      - "50051:50051"  # gRPC Service Port
+    volumes:
+      # Mount shared proto schema as a read-only volume
+      - ./config/grpc-proto-schema:/opt/schemas:ro
+    environment:
+      - HOST=0.0.0.0
+      - PORT_REST=8000
+      - PORT_GRPC=50051
+      - ALPACA_API_KEY=${ALPACA_API_KEY}
+      - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY}
+      - ALPACA_BASE_URL=https://paper-api.alpaca.markets
+      - ALPACA_DATA_FEED=iex
+      # Connect to external Kafka via host gateway
+      - KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:9092
+      - KAFKA_TOPIC_RAW_ORDER_UPDATES=raw-order-updates
+      - TICKERS_TO_TRACK=AAPL,MSFT
+      - LOG_LEVEL=INFO
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Envoy Layer 7 load balancer proxying Connection Manager services
+  tick-lb:
+    build:
+      context: ./tick-lb
+      dockerfile: Dockerfile
+    container_name: tick-lb
+    ports:
+      - "50052:50051"  # Expose Envoy gRPC listener on host port 50052 to avoid conflict with connection-manager
+      - "9901:9901"    # Envoy Administration Port
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - connection-manager-alpaca
+
+  # AAPL Strategy Instance
+  signal-gen-aapl:
+    build:
+      context: ./signal-generator
+      dockerfile: Dockerfile
+    container_name: signal-gen-aapl
+    ports:
+      - "8001:8000"    # Expose REST health check on host 8001 (gRPC port 50051 is client-only and not exposed)
+    volumes:
+      - ./config/strategies/sma_crossover.py:/app/strategies/sma_crossover.py:ro
+    environment:
+      - HOST=0.0.0.0
+      - PORT_REST=8000
+      - PORT_GRPC=50051
+      - STRATEGY_FILE_PATH=/app/strategies/sma_crossover.py
+      - STRATEGY_CLASS_NAME=SmaCrossoverStrategy
+      - 'STRATEGY_PARAMS_JSON={"fast_period": 10, "slow_period": 30}'
+      - TICKER=AAPL
+      # Connect through Envoy Load Balancer
+      - CONNECTION_MANAGER_ENDPOINT=tick-lb:50051
+      - KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:9092
+      - KAFKA_TOPIC_SIGNALS=trading-signals
+      - LOG_LEVEL=INFO
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - tick-lb
+
+  # MSFT Strategy Instance
+  signal-gen-msft:
+    build:
+      context: ./signal-generator
+      dockerfile: Dockerfile
+    container_name: signal-gen-msft
+    ports:
+      - "8002:8000"    # Expose REST health check on host 8002
+    volumes:
+      - ./config/strategies/mean_reversion.py:/app/strategies/mean_reversion.py:ro
+    environment:
+      - HOST=0.0.0.0
+      - PORT_REST=8000
+      - PORT_GRPC=50051
+      - STRATEGY_FILE_PATH=/app/strategies/mean_reversion.py
+      - STRATEGY_CLASS_NAME=MeanReversionStrategy
+      - 'STRATEGY_PARAMS_JSON={"period": 20, "threshold": 2.0}'
+      - TICKER=MSFT
+      # Connect through Envoy Load Balancer
+      - CONNECTION_MANAGER_ENDPOINT=tick-lb:50051
+      - KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:9092
+      - KAFKA_TOPIC_SIGNALS=trading-signals
+      - LOG_LEVEL=INFO
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - tick-lb
+
+  # Fallback stub container
+  signal-gen-default:
+    image: alpine:latest
+    container_name: signal-gen-default
+    command: sleep 3600

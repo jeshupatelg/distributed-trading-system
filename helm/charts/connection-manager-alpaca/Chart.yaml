@@ -1,0 +1,6 @@
+apiVersion: v2
+name: connection-manager-alpaca
+description: A subchart for the connection-manager-alpaca service
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

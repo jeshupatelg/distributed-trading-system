@@ -1,0 +1,70 @@
+admin:
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 9901
+
+static_resources:
+  listeners:
+  - name: grpc_listener
+    address:
+      socket_address:
+        address: 0.0.0.0
+        port_value: 50051
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: grpc_ingress
+          codec_type: AUTO
+          route_config:
+            name: tick_routes
+            virtual_hosts:
+            - name: tick_router
+              domains: ["*"]
+              routes:
+              # Route Market Data streams to connection-manager-alpaca gateway
+              - match:
+                  path: "/trading.connection.MarketDataService/StreamMarketData"
+                route:
+                  cluster: connection-manager-alpaca
+                  timeout: 0s
+                  idle_timeout: 300s
+              # Route Order Execution calls to connection-manager-alpaca gateway
+              - match:
+                  prefix: "/trading.connection.OrderExecutionService/"
+                route:
+                  cluster: connection-manager-alpaca
+          http_filters:
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+  - name: connection-manager-alpaca
+    connect_timeout: 0.25s
+    type: STRICT_DNS
+    lb_policy: ROUND_ROBIN
+    http2_protocol_options: {}
+    circuit_breakers:
+      thresholds:
+      - priority: DEFAULT
+        max_connections: 8192
+        max_requests: 65536
+        max_pending_requests: 8192
+    health_checks:
+    - timeout: 1s
+      interval: 5s
+      unhealthy_threshold: 3
+      healthy_threshold: 2
+      grpc_health_check: {}
+    load_assignment:
+      cluster_name: connection-manager-alpaca
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: connection-manager-alpaca
+                port_value: 50051

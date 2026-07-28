@@ -1,0 +1,26 @@
+# Default values for tick-lb subchart.
+
+replicaCount: 1
+
+image:
+  repository: trading-poc/tick-lb
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  grpcPort: 50051
+  adminPort: 9901
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+probes:
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3

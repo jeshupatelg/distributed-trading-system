@@ -1,0 +1,75 @@
+{{- range $key, $val := .Values.instances }}
+{{- if $val.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $.Release.Name }}-signal-gen-{{ $key }}
+  labels:
+    {{- include "signal-generator.labels" $ | nindent 4 }}
+    instance: {{ $key }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "signal-generator.selectorLabels" $ | nindent 6 }}
+      instance: {{ $key }}
+  template:
+    metadata:
+      labels:
+        {{- include "signal-generator.selectorLabels" $ | nindent 8 }}
+        instance: {{ $key }}
+    spec:
+      containers:
+        {{- if $val.isStub }}
+        - name: stub
+          image: {{ $val.stubImage | default "alpine:latest" | quote }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          command: ["sleep", "3600"]
+          resources:
+            {{- toYaml $val.resources | nindent 12 }}
+        {{- else }}
+        - name: signal-generator
+          image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag | default $.Chart.AppVersion }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ $.Values.service.httpPort }}
+              name: http-health
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT_REST
+              value: {{ $.Values.service.httpPort | quote }}
+            - name: STRATEGY_FILE_PATH
+              value: {{ $val.strategyFile | quote }}
+            - name: STRATEGY_CLASS_NAME
+              value: {{ $val.strategyClass | quote }}
+            - name: STRATEGY_PARAMS_JSON
+              value: {{ $val.paramsJson | quote }}
+            - name: TICKER
+              value: {{ $val.ticker | quote }}
+            - name: CONNECTION_MANAGER_ENDPOINT
+              value: {{ $.Values.connectionManagerEndpoint | quote }}
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: {{ $.Values.kafka.bootstrapServers | quote }}
+            - name: KAFKA_TOPIC_SIGNALS
+              value: {{ $.Values.kafka.topicSignals | quote }}
+          resources:
+            {{- toYaml $val.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http-health
+            initialDelaySeconds: {{ $.Values.probes.initialDelaySeconds }}
+            periodSeconds: {{ $.Values.probes.periodSeconds }}
+            timeoutSeconds: {{ $.Values.probes.timeoutSeconds }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http-health
+            initialDelaySeconds: {{ $.Values.probes.initialDelaySeconds }}
+            periodSeconds: {{ $.Values.probes.periodSeconds }}
+            timeoutSeconds: {{ $.Values.probes.timeoutSeconds }}
+        {{- end }}
+{{- end }}
+{{- end }}

@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "connection-manager-alpaca.fullname" . }}
+  labels:
+    {{- include "connection-manager-alpaca.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "connection-manager-alpaca.selectorLabels" . | nindent 2 }}
+  template:
+    metadata:
+      labels:
+        {{- include "connection-manager-alpaca.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.httpPort }}
+              name: http-health
+            - containerPort: {{ .Values.service.grpcPort }}
+              name: grpc-trading
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT_REST
+              value: {{ .Values.service.httpPort | quote }}
+            - name: PORT_GRPC
+              value: {{ .Values.service.grpcPort | quote }}
+            - name: ALPACA_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Release.Name }}-shared-config
+                  key: ALPACA_BASE_URL
+            - name: ALPACA_DATA_FEED
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Release.Name }}-shared-config
+                  key: ALPACA_DATA_FEED
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Release.Name }}-shared-config
+                  key: KAFKA_BOOTSTRAP_SERVERS
+            - name: KAFKA_TOPIC_RAW_ORDER_UPDATES
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Release.Name }}-shared-config
+                  key: KAFKA_TOPIC_RAW_ORDER_UPDATES
+            - name: TICKERS_TO_TRACK
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Release.Name }}-shared-config
+                  key: TICKERS_TO_TRACK
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Release.Name }}-shared-config
+                  key: LOG_LEVEL
+            - name: ALPACA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "connection-manager-alpaca.fullname" . }}-secret
+                  key: ALPACA_API_KEY
+            - name: ALPACA_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "connection-manager-alpaca.fullname" . }}-secret
+                  key: ALPACA_SECRET_KEY
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http-health
+            initialDelaySeconds: {{ .Values.probes.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.timeoutSeconds }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http-health
+            initialDelaySeconds: {{ .Values.probes.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.timeoutSeconds }}

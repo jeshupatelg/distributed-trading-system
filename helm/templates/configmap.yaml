@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-shared-config
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+data:
+  {{- $cmConfig := (index .Values "connection-manager-alpaca").config }}
+  ALPACA_BASE_URL: {{ $cmConfig.alpacaBaseUrl | quote }}
+  ALPACA_DATA_FEED: {{ $cmConfig.alpacaDataFeed | quote }}
+  KAFKA_BOOTSTRAP_SERVERS: {{ $cmConfig.kafkaBootstrapServers | quote }}
+  KAFKA_TOPIC_RAW_ORDER_UPDATES: {{ $cmConfig.kafkaTopicRawOrderUpdates | quote }}
+  TICKERS_TO_TRACK: {{ $cmConfig.tickersToTrack | quote }}
+  LOG_LEVEL: {{ $cmConfig.logLevel | quote }}

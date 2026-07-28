@@ -1,0 +1,65 @@
+# Default values for signal-generator instances.
+
+image:
+  repository: trading-poc/signal-generator
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  httpPort: 8000
+  grpcPort: 50051
+
+probes:
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+
+# gRPC connection details
+connectionManagerEndpoint: "release-name-tick-lb:50051"
+
+# Kafka broker connection details
+kafka:
+  bootstrapServers: "host.docker.internal:9092"
+  topicSignals: "trading-signals"
+
+# Dynamic Strategy Instances configuration
+instances:
+  aapl:
+    enabled: true
+    ticker: "AAPL"
+    strategyClass: "SmaCrossoverStrategy"
+    strategyFile: "/app/strategies/sma_crossover.py"
+    paramsJson: '{"fast_period": 10, "slow_period": 30}'
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+  msft:
+    enabled: true
+    ticker: "MSFT"
+    strategyClass: "MeanReversionStrategy"
+    strategyFile: "/app/strategies/mean_reversion.py"
+    paramsJson: '{"period": 20, "threshold": 2.0}'
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+  default:
+    enabled: true
+    ticker: "DEFAULT"
+    isStub: true
+    stubImage: "alpine:latest"
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi

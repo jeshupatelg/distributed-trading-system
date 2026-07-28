@@ -1,0 +1,41 @@
+# Helm values override example for customized deployments
+global:
+  environment: production
+
+# Connection Manager configuration overrides
+connection-manager-alpaca:
+  enabled: true
+  secret:
+    # Inject actual credentials during deployment
+    alpacaApiKey: "PROD_ALPACA_API_KEY_HERE"
+    alpacaSecretKey: "PROD_ALPACA_SECRET_KEY_HERE"
+  config:
+    logLevel: "WARN"
+    alpacaBaseUrl: "https://api.alpaca.markets" # Use Live trading endpoint
+    alpacaDataFeed: "sip"                       # Use paid SIP data feed
+
+# Signal Generator strategy instances overrides
+signal-generator:
+  enabled: true
+  instances:
+    # Fine-tune strategy parameter settings for production
+    aapl:
+      enabled: true
+      paramsJson: '{"fast_period": 5, "slow_period": 20}'
+      resources:
+        limits:
+          cpu: 1000m
+          memory: 512Mi
+        requests:
+          cpu: 200m
+          memory: 256Mi
+    msft:
+      enabled: true
+      paramsJson: '{"period": 30, "threshold": 1.5}'
+      resources:
+        limits:
+          cpu: 1000m
+          memory: 512Mi
+        requests:
+          cpu: 200m
+          memory: 256Mi

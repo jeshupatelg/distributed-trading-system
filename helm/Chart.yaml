@@ -1,0 +1,19 @@
+apiVersion: v2
+name: distributed-trading-system
+description: A Unified Helm Chart for the Distributed Trading System
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+dependencies:
+  - name: connection-manager-alpaca
+    version: 1.0.0
+    repository: "file://charts/connection-manager-alpaca"
+  - name: tick-lb
+    version: 1.0.0
+    repository: "file://charts/tick-lb"
+  - name: signal-generator
+    version: 1.0.0
+    repository: "file://charts/signal-generator"
+
+
+

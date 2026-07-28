@@ -1,0 +1,19 @@
+# Antigravity repo-level configurations & outputs
+.agents/
+
+# Python Virtual Environments
+.venv/
+__pycache__/
+*.pyc
+
+# IDE configs
+.idea/
+.vscode/
+
+# Local env files
+.env
+.env*.local
+
+# Agent workspace
+.agent/
+

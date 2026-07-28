@@ -1,0 +1,15 @@
+# Top-level Values configuration for distributed-trading-system
+
+# Global values shared across charts
+global:
+  environment: development
+
+# Enable/disable configuration for subcharts
+connection-manager-alpaca:
+  enabled: true
+
+tick-lb:
+  enabled: true
+
+signal-generator:
+  enabled: true
