@@ -12,5 +12,6 @@ data:
   ALPACA_DATA_FEED: {{ $cmConfig.alpacaDataFeed | quote }}
   KAFKA_BOOTSTRAP_SERVERS: {{ $cmConfig.kafkaBootstrapServers | quote }}
   KAFKA_TOPIC_RAW_ORDER_UPDATES: {{ $cmConfig.kafkaTopicRawOrderUpdates | quote }}
+  KAFKA_AUTO_CREATE_TOPICS: {{ $cmConfig.kafkaAutoCreateTopics | quote }}
   TICKERS_TO_TRACK: {{ $cmConfig.tickersToTrack | quote }}
   LOG_LEVEL: {{ $cmConfig.logLevel | quote }}

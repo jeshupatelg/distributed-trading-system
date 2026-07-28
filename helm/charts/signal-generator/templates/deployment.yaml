@@ -54,6 +54,11 @@ spec:
               value: {{ $.Values.kafka.bootstrapServers | quote }}
             - name: KAFKA_TOPIC_SIGNALS
               value: {{ $.Values.kafka.topicSignals | quote }}
+            - name: KAFKA_AUTO_CREATE_TOPICS
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ $.Release.Name }}-shared-config
+                  key: KAFKA_AUTO_CREATE_TOPICS
           resources:
             {{- toYaml $val.resources | nindent 12 }}
           livenessProbe:

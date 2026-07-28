@@ -45,6 +45,8 @@ CONNECTION_MANAGER_ENDPOINT = os.getenv("CONNECTION_MANAGER_ENDPOINT", "connecti
 # Kafka configurations
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 KAFKA_TOPIC_SIGNALS = os.getenv("KAFKA_TOPIC_SIGNALS", "trading-signals")
+KAFKA_AUTO_CREATE_TOPICS = os.getenv("KAFKA_AUTO_CREATE_TOPICS", "false").lower() in ("true", "1", "yes")
+
 
 logger.info(
     f"Loaded Config: TICKER={TICKER}, strategy_class={STRATEGY_CLASS_NAME}, "

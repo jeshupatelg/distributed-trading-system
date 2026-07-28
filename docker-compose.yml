@@ -24,6 +24,7 @@ services:
       # Connect to external Kafka via host gateway
       - KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:9092
       - KAFKA_TOPIC_RAW_ORDER_UPDATES=raw-order-updates
+      - KAFKA_AUTO_CREATE_TOPICS=${KAFKA_AUTO_CREATE_TOPICS:-false}
       - TICKERS_TO_TRACK=AAPL,MSFT
       - LOG_LEVEL=INFO
     extra_hosts:
@@ -65,6 +66,7 @@ services:
       - CONNECTION_MANAGER_ENDPOINT=tick-lb:50051
       - KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:9092
       - KAFKA_TOPIC_SIGNALS=trading-signals
+      - KAFKA_AUTO_CREATE_TOPICS=${KAFKA_AUTO_CREATE_TOPICS:-false}
       - LOG_LEVEL=INFO
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -93,6 +95,7 @@ services:
       - CONNECTION_MANAGER_ENDPOINT=tick-lb:50051
       - KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:9092
       - KAFKA_TOPIC_SIGNALS=trading-signals
+      - KAFKA_AUTO_CREATE_TOPICS=${KAFKA_AUTO_CREATE_TOPICS:-false}
       - LOG_LEVEL=INFO
     extra_hosts:
       - "host.docker.internal:host-gateway"

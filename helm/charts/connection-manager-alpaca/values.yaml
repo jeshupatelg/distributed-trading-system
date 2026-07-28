@@ -17,6 +17,7 @@ config:
   alpacaDataFeed: "iex"
   kafkaBootstrapServers: "kafka:9092"
   kafkaTopicRawOrderUpdates: "raw-order-updates"
+  kafkaAutoCreateTopics: "false"
   tickersToTrack: "AAPL,MSFT"
   logLevel: "INFO"
 

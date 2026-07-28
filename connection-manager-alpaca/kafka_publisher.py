@@ -35,6 +35,36 @@ class KafkaEventPublisher:
         self.executor = ThreadPoolExecutor(max_workers=2)
         self._running = True
         self._poll_task = None
+        
+        # Programmatically ensure topic exists
+        try:
+            self._ensure_topic_exists()
+        except Exception as e:
+            logger.error("Failed to verify/create Kafka topic programmatically: %s", e)
+
+    def _ensure_topic_exists(self):
+        """Query broker and create the configured topic if it does not exist."""
+        from confluent_kafka.admin import AdminClient, NewTopic
+        
+        logger.info("Verifying existence of Kafka topic '%s'...", self.topic)
+        admin = AdminClient({"bootstrap.servers": config.KAFKA_BOOTSTRAP_SERVERS})
+        metadata = admin.list_topics(timeout=5.0)
+        
+        if self.topic not in metadata.topics:
+            if not config.KAFKA_AUTO_CREATE_TOPICS:
+                logger.error("Topic '%s' does not exist and KAFKA_AUTO_CREATE_TOPICS is disabled.", self.topic)
+                raise ValueError(f"CRITICAL: Kafka topic '{self.topic}' does not exist and KAFKA_AUTO_CREATE_TOPICS is disabled.")
+                
+            logger.info("Topic '%s' not found. Creating programmatically...", self.topic)
+            # Default to 3 partitions for consumer scalability and 1 replica for dev/local setups
+            new_topic = NewTopic(self.topic, num_partitions=3, replication_factor=1)
+            futures = admin.create_topics([new_topic])
+            for topic, future in futures.items():
+                future.result(timeout=5.0)
+            logger.info("Topic '%s' created successfully.", self.topic)
+        else:
+            logger.info("Topic '%s' already exists.", self.topic)
+
 
     def start(self):
         """Start the background poll loop task in the current event loop."""

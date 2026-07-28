@@ -50,6 +50,11 @@ spec:
                 configMapKeyRef:
                   name: {{ .Release.Name }}-shared-config
                   key: KAFKA_TOPIC_RAW_ORDER_UPDATES
+            - name: KAFKA_AUTO_CREATE_TOPICS
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Release.Name }}-shared-config
+                  key: KAFKA_AUTO_CREATE_TOPICS
             - name: TICKERS_TO_TRACK
               valueFrom:
                 configMapKeyRef:

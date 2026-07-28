@@ -36,6 +36,8 @@ elif ALPACA_BASE_URL.endswith("/v2/"):
 # Kafka configuration
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 KAFKA_TOPIC_RAW_ORDER_UPDATES = os.getenv("KAFKA_TOPIC_RAW_ORDER_UPDATES", "raw-order-updates")
+KAFKA_AUTO_CREATE_TOPICS = os.getenv("KAFKA_AUTO_CREATE_TOPICS", "false").lower() in ("true", "1", "yes")
+
 
 # Tickers & Streams
 TICKERS_TO_TRACK = [t.strip() for t in os.getenv("TICKERS_TO_TRACK", "AAPL,MSFT").split(",") if t.strip()]

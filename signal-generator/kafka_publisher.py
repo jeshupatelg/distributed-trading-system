@@ -17,6 +17,36 @@ class KafkaSignalPublisher:
         self.executor = ThreadPoolExecutor(max_workers=3)
         self.loop = asyncio.get_event_loop()
         logger.info(f"Initialized Kafka publisher to brokers: {config.KAFKA_BOOTSTRAP_SERVERS}")
+        
+        # Programmatically ensure topic exists
+        try:
+            self._ensure_topic_exists()
+        except Exception as e:
+            logger.error(f"Failed to verify/create Kafka topic programmatically: {e}")
+
+    def _ensure_topic_exists(self):
+        """Query broker and create the configured topic if it does not exist."""
+        from confluent_kafka.admin import AdminClient, NewTopic
+        
+        topic = config.KAFKA_TOPIC_SIGNALS
+        logger.info(f"Verifying existence of Kafka topic '{topic}'...")
+        admin = AdminClient({"bootstrap.servers": config.KAFKA_BOOTSTRAP_SERVERS})
+        metadata = admin.list_topics(timeout=5.0)
+        
+        if topic not in metadata.topics:
+            if not config.KAFKA_AUTO_CREATE_TOPICS:
+                logger.error(f"Topic '{topic}' does not exist and KAFKA_AUTO_CREATE_TOPICS is disabled.")
+                raise ValueError(f"CRITICAL: Kafka topic '{topic}' does not exist and KAFKA_AUTO_CREATE_TOPICS is disabled.")
+                
+            logger.info(f"Topic '{topic}' not found. Creating programmatically...")
+            new_topic = NewTopic(topic, num_partitions=3, replication_factor=1)
+            futures = admin.create_topics([new_topic])
+            for t, future in futures.items():
+                future.result(timeout=5.0)
+            logger.info(f"Topic '{topic}' created successfully.")
+        else:
+            logger.info(f"Topic '{topic}' already exists.")
+
 
     def _sync_publish(self, topic: str, key: str, value: str):
         try:
