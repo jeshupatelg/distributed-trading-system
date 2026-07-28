@@ -20,7 +20,7 @@ connectionManagerEndpoint: "release-name-tick-lb:50051"
 
 # Kafka broker connection details
 kafka:
-  bootstrapServers: "host.docker.internal:9092"
+  bootstrapServers: "kafka:9092"
   topicSignals: "trading-signals"
 
 # Dynamic Strategy Instances configuration

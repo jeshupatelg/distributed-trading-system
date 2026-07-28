@@ -22,7 +22,7 @@ services:
       - ALPACA_BASE_URL=https://paper-api.alpaca.markets
       - ALPACA_DATA_FEED=iex
       # Connect to external Kafka via host gateway
-      - KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:9092
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - KAFKA_TOPIC_RAW_ORDER_UPDATES=raw-order-updates
       - KAFKA_AUTO_CREATE_TOPICS=${KAFKA_AUTO_CREATE_TOPICS:-false}
       - TICKERS_TO_TRACK=AAPL,MSFT
@@ -64,7 +64,7 @@ services:
       - TICKER=AAPL
       # Connect through Envoy Load Balancer
       - CONNECTION_MANAGER_ENDPOINT=tick-lb:50051
-      - KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:9092
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - KAFKA_TOPIC_SIGNALS=trading-signals
       - KAFKA_AUTO_CREATE_TOPICS=${KAFKA_AUTO_CREATE_TOPICS:-false}
       - LOG_LEVEL=INFO
@@ -93,7 +93,7 @@ services:
       - TICKER=MSFT
       # Connect through Envoy Load Balancer
       - CONNECTION_MANAGER_ENDPOINT=tick-lb:50051
-      - KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:9092
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - KAFKA_TOPIC_SIGNALS=trading-signals
       - KAFKA_AUTO_CREATE_TOPICS=${KAFKA_AUTO_CREATE_TOPICS:-false}
       - LOG_LEVEL=INFO
@@ -107,3 +107,9 @@ services:
     image: alpine:latest
     container_name: signal-gen-default
     command: sleep 3600
+
+networks:
+  default:
+    name: kafka_net
+    external: true
+
