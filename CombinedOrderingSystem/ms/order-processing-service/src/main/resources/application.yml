@@ -1,0 +1,30 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: order-processing-service
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: ops-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+trading:
+  topics:
+    signals: ${KAFKA_TOPIC_SIGNALS:trading-signals}
+    order-create: ${KAFKA_TOPIC_ORDER_CREATE:order-create-events}
+  # Maps a provider name to its corresponding gRPC Connection Manager endpoint
+  providers:
+    alpaca: ${PROVIDER_ALPACA_ENDPOINT:connection-manager-alpaca:50051}
+    x: ${PROVIDER_X_ENDPOINT:connection-manager-x:50051}
+    default: ${PROVIDER_DEFAULT_ENDPOINT:connection-manager-alpaca:50051}

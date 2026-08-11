@@ -1,0 +1,41 @@
+# Default values for order-management-service.
+
+replicaCount: 1
+
+image:
+  repository: trading-poc/order-management-service
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  httpPort: 8080
+
+config:
+  dbUrl: "jdbc:postgresql://postgres:5432/tradingdb"
+  dbUsername: "postgres"
+  dbPassword: "password"
+  dbMaxConnections: "50"
+  redisHost: "redis-cluster"
+  redisPort: "6379"
+  redisPassword: ""
+  kafkaBootstrapServers: "kafka:9092"
+  kafkaTopicRawOrderUpdates: "raw-order-updates"
+  kafkaTopicOrderCreate: "order-create-event"
+  kafkaTopicOrderComplete: "order-complete-event"
+  connectionManagerAlpacaEndpoint: "tick-lb:50051"
+  connectionManagerXEndpoint: "conn-mgr-x:50051"
+  logLevel: "INFO"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+probes:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 3

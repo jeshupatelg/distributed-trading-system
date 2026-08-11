@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "order-processing-service.fullname" . }}
+  labels:
+    {{- include "order-processing-service.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.httpPort }}
+      targetPort: http-health
+      protocol: TCP
+      name: http-health
+  selector:
+    {{- include "order-processing-service.selectorLabels" . | nindent 4 }}

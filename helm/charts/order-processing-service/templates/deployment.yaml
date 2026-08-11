@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "order-processing-service.fullname" . }}
+  labels:
+    {{- include "order-processing-service.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "order-processing-service.selectorLabels" . | nindent 2 }}
+  template:
+    metadata:
+      labels:
+        {{- include "order-processing-service.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service.httpPort }}
+              name: http-health
+          env:
+            - name: SPRING_DATA_REDIS_HOST
+              value: {{ .Values.config.redisHost | quote }}
+            - name: SPRING_DATA_REDIS_PORT
+              value: {{ .Values.config.redisPort | quote }}
+            - name: SPRING_DATA_REDIS_PASSWORD
+              value: {{ .Values.config.redisPassword | quote }}
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: {{ .Values.config.kafkaBootstrapServers | quote }}
+            - name: KAFKA_TOPIC_SIGNALS
+              value: {{ .Values.config.kafkaTopicSignals | quote }}
+            - name: KAFKA_TOPIC_ORDER_CREATE
+              value: {{ .Values.config.kafkaTopicOrderCreate | quote }}
+            - name: CONNECTION_MANAGER_ALPACA_ENDPOINT
+              value: {{ .Values.config.connectionManagerAlpacaEndpoint | quote }}
+            - name: CONNECTION_MANAGER_X_ENDPOINT
+              value: {{ .Values.config.connectionManagerXEndpoint | quote }}
+            - name: OMS_RISK_MAX_LEVERAGE
+              value: {{ .Values.config.riskMaxLeverage | quote }}
+            - name: OMS_RISK_ALLOWED_TICKERS
+              value: {{ .Values.config.riskAllowedTickers | quote }}
+            - name: OMS_RISK_MAX_ORDER_VALUE
+              value: {{ .Values.config.riskMaxOrderValue | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.config.logLevel | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http-health
+            initialDelaySeconds: {{ .Values.probes.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.timeoutSeconds }}
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http-health
+            initialDelaySeconds: {{ .Values.probes.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.timeoutSeconds }}

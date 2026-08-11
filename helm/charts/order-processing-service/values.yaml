@@ -1,0 +1,39 @@
+# Default values for order-processing-service.
+
+replicaCount: 1
+
+image:
+  repository: trading-poc/order-processing-service
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  httpPort: 8080
+
+config:
+  redisHost: "redis-cluster"
+  redisPort: "6379"
+  redisPassword: ""
+  kafkaBootstrapServers: "kafka:9092"
+  kafkaTopicSignals: "trading-signals"
+  kafkaTopicOrderCreate: "order-create-event"
+  connectionManagerAlpacaEndpoint: "tick-lb:50051"
+  connectionManagerXEndpoint: "conn-mgr-x:50051"
+  riskMaxLeverage: "2.0"
+  riskAllowedTickers: "AAPL,MSFT,TSLA"
+  riskMaxOrderValue: "50000.00"
+  logLevel: "INFO"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+probes:
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 3

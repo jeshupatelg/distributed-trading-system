@@ -13,3 +13,9 @@ tick-lb:
 
 signal-generator:
   enabled: true
+
+order-processing-service:
+  enabled: true
+
+order-management-service:
+  enabled: true

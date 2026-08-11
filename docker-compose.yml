@@ -108,8 +108,99 @@ services:
     container_name: signal-gen-default
     command: sleep 3600
 
+  # Order Processing Service (OPS)
+  order-processing-service:
+    build:
+      context: ./CombinedOrderingSystem
+      dockerfile: ms/order-processing-service/Dockerfile
+    container_name: order-processing-service
+    ports:
+      - "8081:8081"
+    environment:
+      - REDIS_HOST=host.docker.internal
+      - REDIS_PORT=6379
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_TOPIC_SIGNALS=trading-signals
+      - KAFKA_TOPIC_ORDER_CREATE=order-create-events
+      - PROVIDER_ALPACA_ENDPOINT=connection-manager-alpaca:50051
+      - PROVIDER_X_ENDPOINT=connection-manager-x:50051
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - tick-lb
+
+  # Order Management Service (OMS)
+  order-management-service:
+    build:
+      context: ./CombinedOrderingSystem
+      dockerfile: ms/order-management-service/Dockerfile
+    container_name: order-management-service
+    ports:
+      - "8082:8082"
+    environment:
+      - REDIS_HOST=host.docker.internal
+      - REDIS_PORT=6379
+      - DB_HOST=host.docker.internal
+      - DB_PORT=5432
+      - DB_NAME=trading_db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_TOPIC_ORDER_CREATE=order-create-events
+      - KAFKA_TOPIC_RAW_ORDER_UPDATES=raw-order-updates
+      - KAFKA_TOPIC_ORDER_COMPLETE=order-complete-events
+      - PROVIDER_ALPACA_ENDPOINT=connection-manager-alpaca:50051
+      - PROVIDER_X_ENDPOINT=connection-manager-x:50051
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - order-processing-service
+
+
+  # Quant/UI Dashboard Service
+  quant-dashboard:
+    build:
+      context: ./quant-dashboard
+      dockerfile: Dockerfile
+    container_name: quant-dashboard
+    ports:
+      - "8501:8501"
+    environment:
+      - REDIS_HOST=host.docker.internal
+      - REDIS_PORT=6379
+      - DB_HOST=host.docker.internal
+      - DB_PORT=5432
+      - DB_NAME=trading_db
+      - DB_USER=dashboard_reader
+      - DB_PASSWORD=read_pass
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Prometheus Telemetry Collector
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Grafana Visualization UI
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
 networks:
   default:
     name: kafka_net
     external: true
+
 

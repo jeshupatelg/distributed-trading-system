@@ -1,0 +1,44 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # 1. Prometheus self-scraping
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # 2. Alpaca Connection Manager (Python API metrics)
+  - job_name: 'connection-manager-alpaca'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['connection-manager-alpaca:8000']
+
+  # 3. Envoy Load Balancer (tick-lb admin metrics)
+  - job_name: 'tick-lb'
+    metrics_path: '/stats/prometheus'
+    static_configs:
+      - targets: ['tick-lb:9901']
+
+  # 4. Order Processing Service (OPS Java Spring Boot Actuator)
+  - job_name: 'order-processing-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['order-processing-service:8081']
+
+  # 5. Order Management Service (OMS Java Spring Boot Actuator)
+  - job_name: 'order-management-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['order-management-service:8082']
+
+  # 6. Signal Generators (Python Strategy health endpoints)
+  - job_name: 'signal-generator-aapl'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['signal-gen-aapl:8000']
+
+  - job_name: 'signal-generator-msft'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['signal-gen-msft:8000']

@@ -1,0 +1,350 @@
+import os
+import time
+import streamlit as st
+import redis
+import psycopg2
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+
+# Set page configuration with a modern dark theme style (configured in Streamlit settings)
+st.set_page_config(
+    page_title="Quant Operations Dashboard",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# --- Configuration & Connection Helpers ---
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
+
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = os.getenv("DB_PORT", "5432")
+DB_NAME = os.getenv("DB_NAME", "trading_db")
+DB_USER = os.getenv("DB_USER", "dashboard_reader")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "read_pass")
+
+# Cache connection pools to prevent socket exhaustion
+@st.cache_resource(show_spinner=False)
+def get_redis_client():
+    try:
+        r = redis.Redis(
+            host=REDIS_HOST,
+            port=REDIS_PORT,
+            password=REDIS_PASSWORD,
+            socket_timeout=2.0,
+            decode_responses=True
+        )
+        # Test connection
+        r.ping()
+        return r, True
+    except Exception as e:
+        return None, False
+
+@st.cache_resource(show_spinner=False)
+def get_db_connection():
+    try:
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            dbname=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            connect_timeout=2
+        )
+        return conn, True
+    except Exception as e:
+        return None, False
+
+# Try connecting to live infrastructure
+r_client, redis_connected = get_redis_client()
+db_conn, db_connected = get_db_connection()
+
+# --- Sidebar Layout ---
+st.sidebar.title("📈 Quant Operations")
+st.sidebar.subheader("System Control Center")
+
+# Connection status widgets
+if redis_connected:
+    st.sidebar.success(f"Connected to Redis ({REDIS_HOST})")
+else:
+    st.sidebar.warning("Redis: Offline (Using Mock Data)")
+
+if db_connected:
+    st.sidebar.success("Database: Connected")
+else:
+    st.sidebar.warning("SQL DB: Offline (Using Mock Data)")
+
+# Page Selection
+page = st.sidebar.radio(
+    "Navigation Menu",
+    ["Portfolio & Assets", "Order History", "Provider Status", "System Telemetry"]
+)
+
+st.sidebar.divider()
+st.sidebar.caption("System Status: **Active**")
+st.sidebar.caption("Scope: **Read-Only (Pull Mode)**")
+
+# --- Page 1: Portfolio & Assets ---
+if page == "Portfolio & Assets":
+    st.title("💼 Portfolio & Asset Allocation")
+    st.markdown("Real-time view of equity, margins, and position distributions pulled from Redis cache.")
+    
+    # 1. Fetch data (Live or Mock fallback)
+    if redis_connected:
+        try:
+            balance = float(r_client.get("account:balance") or 100000.0)
+            blocked_margin = float(r_client.get("account:blocked_margin") or 15000.0)
+            
+            # Fetch active positions
+            position_keys = r_client.keys("position:*")
+            positions = {}
+            for pk in position_keys:
+                ticker = pk.split(":")[-1]
+                positions[ticker] = float(r_client.get(pk) or 0.0)
+        except Exception as e:
+            st.error(f"Error querying Redis: {e}")
+            redis_connected = False # Fallback to mock
+
+    if not redis_connected:
+        # High quality mockup values
+        balance = 125430.50
+        blocked_margin = 18500.00
+        positions = {"AAPL": 150.0, "MSFT": 80.0, "TSLA": 45.0, "GOOGL": 30.0}
+
+    # Derived metrics
+    free_cash = balance - blocked_margin
+    mock_prices = {"AAPL": 175.0, "MSFT": 420.0, "TSLA": 220.0, "GOOGL": 150.0}
+    position_value = sum(qty * mock_prices.get(ticker, 100.0) for ticker, qty in positions.items())
+    total_equity = free_cash + blocked_margin + position_value
+
+    # Key Stat Metrics Row
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total Net Equity", f"${total_equity:,.2f}", delta=f"+1.42% (Today)")
+    col2.metric("Total Balance", f"${balance:,.2f}")
+    col3.metric("Blocked Margin", f"${blocked_margin:,.2f}")
+    col4.metric("Active Assets Value", f"${position_value:,.2f}")
+
+    st.divider()
+
+    # Visualizations
+    v_col1, v_col2 = st.columns([1, 1])
+    
+    with v_col1:
+        st.subheader("Asset Distribution")
+        # Prepare pie data
+        df_pie = pd.DataFrame([
+            {"Asset": "Free Cash", "Value": free_cash},
+            {"Asset": "Blocked Margin", "Value": blocked_margin},
+        ] + [{"Asset": f"Position: {t}", "Value": q * mock_prices.get(t, 100.0)} for t, q in positions.items()])
+        
+        fig_pie = px.pie(df_pie, values='Value', names='Asset', hole=0.4,
+                         color_discrete_sequence=px.colors.sequential.RdBu)
+        st.plotly_chart(fig_pie, use_container_width=True)
+
+    with v_col2:
+        st.subheader("Current Positions Summary")
+        df_pos = pd.DataFrame([
+            {"Ticker": t, "Quantity": q, "Value": q * mock_prices.get(t, 100.0)} for t, q in positions.items()
+        ])
+        fig_bar = px.bar(df_pos, x='Ticker', y='Value', text_auto='.2s', labels={'Value':'Total Value ($)'},
+                         color='Ticker', color_discrete_sequence=px.colors.qualitative.Slate)
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+# --- Page 2: Order History ---
+elif page == "Order History":
+    st.title("📋 Order Audit Trail")
+    st.markdown("Transactional audit trail queried asynchronously from the persistent Order Management SQL Database.")
+    
+    # 1. Fetch data
+    orders_df = pd.DataFrame()
+    if db_connected:
+        try:
+            query = """
+            SELECT order_id, ticker, quantity, side, status, timestamp, limit_price
+            FROM tracked_orders
+            ORDER BY timestamp DESC
+            LIMIT 100;
+            """
+            orders_df = pd.read_sql_query(query, db_conn)
+        except Exception as e:
+            st.error(f"Error querying SQL Database: {e}")
+            db_connected = False
+
+    if not db_connected:
+        # Fallback Mock Data
+        mock_data = {
+            "order_id": [f"ord_f820c{i}" for i in range(5)],
+            "ticker": ["AAPL", "MSFT", "AAPL", "TSLA", "MSFT"],
+            "quantity": [10, 5, 20, 15, 10],
+            "side": ["BUY", "SELL", "BUY", "BUY", "SELL"],
+            "status": ["FILLED", "FILLED", "PENDING", "FAILED", "FILLED"],
+            "timestamp": [
+                "2026-08-02 06:15:02",
+                "2026-08-02 06:10:45",
+                "2026-08-02 06:05:12",
+                "2026-08-02 05:59:30",
+                "2026-08-02 05:42:15"
+            ],
+            "limit_price": [174.50, 421.10, 173.80, 222.00, 419.80]
+        }
+        orders_df = pd.DataFrame(mock_data)
+
+    # 2. Filters
+    f_col1, f_col2, f_col3 = st.columns(3)
+    with f_col1:
+        selected_ticker = st.selectbox("Filter Ticker", ["ALL"] + list(orders_df["ticker"].unique()))
+    with f_col2:
+        selected_status = st.selectbox("Filter Status", ["ALL"] + list(orders_df["status"].unique()))
+    with f_col3:
+        search_id = st.text_input("Search Order ID")
+
+    # Apply filters
+    filtered_df = orders_df.copy()
+    if selected_ticker != "ALL":
+        filtered_df = filtered_df[filtered_df["ticker"] == selected_ticker]
+    if selected_status != "ALL":
+        filtered_df = filtered_df[filtered_df["status"] == selected_status]
+    if search_id:
+        filtered_df = filtered_df[filtered_df["order_id"].str.contains(search_id, case=False)]
+
+    st.subheader(f"Recent Orders ({len(filtered_df)} items matching)")
+    st.dataframe(filtered_df, use_container_width=True)
+
+    # --- ENHANCEMENT POINT: PUSH TRIGGERS ---
+    st.divider()
+    st.info("💡 **Enhancement Hook: Interactive Order Dispatch**")
+    
+    with st.expander("Trigger Manual Transaction (Future Write Trigger)"):
+        st.warning("⚠️ Manual trading is currently locked in Read-Only Mode.")
+        
+        # Inactive form fields
+        col1, col2, col3, col4 = st.columns(4)
+        col1.text_input("Target Symbol", value="AAPL", disabled=True)
+        col2.number_input("Shares Quantity", min_value=1, value=100, disabled=True)
+        col3.selectbox("Order Side", ["BUY", "SELL"], disabled=True)
+        col4.number_input("Limit Price ($)", value=175.0, disabled=True)
+        
+        # Disabled button representing the future trigger
+        st.button("Transmit Order to Ingress Gateway", disabled=True, type="primary")
+        
+        st.code("""
+# [ENHANCEMENT POINT: WRITE TRIGGER IN STAGE 2]
+# When the trigger is enabled, the button above will invoke this client method:
+# 
+# import grpc
+# import order_processing_pb2 as pb
+# import order_processing_pb2_grpc as pb_grpc
+# 
+# def trigger_order_submission(ticker, qty, side, limit_price):
+#     with grpc.insecure_channel("order-processing-service:50051") as channel:
+#         stub = pb_grpc.OrderProcessingServiceStub(channel)
+#         response = stub.PlaceOrder(pb.OrderRequest(
+#             ticker=ticker,
+#             quantity=qty,
+#             side=side,
+#             limit_price=limit_price
+#         ))
+#     return response.order_id
+        """, language="python")
+
+# --- Page 3: Provider Status ---
+elif page == "Provider Status":
+    st.title("🔌 Broker Gateway Connection Providers")
+    st.markdown("Real-time telemetry and health state of active stateless credential gateways.")
+
+    # Gateway state grid
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("Alpaca Ingress Gateway")
+        st.metric("Status", "Connected", delta="Latency: 18ms")
+        st.json({
+            "connection_type": "WebSocket + REST",
+            "connected_symbol_channels": ["AAPL", "MSFT"],
+            "session_active_seconds": 1240,
+            "feed_source": "iex",
+            "api_endpoint": "https://paper-api.alpaca.markets"
+        })
+
+    with col2:
+        st.subheader("Broker X Ingress Gateway")
+        st.metric("Status", "Standby / Unused", delta="Latency: --", delta_color="off")
+        st.json({
+            "connection_type": "None",
+            "connected_symbol_channels": [],
+            "session_active_seconds": 0,
+            "api_endpoint": "http://localhost:8001"
+        })
+
+    # --- ENHANCEMENT POINT: PUSH TRIGGERS ---
+    st.divider()
+    st.info("💡 **Enhancement Hook: Strategy Parameter Tuning**")
+    
+    with st.expander("Update Running Ticker Strategy Parameters"):
+        st.warning("⚠️ Strategy parameter tuning is currently locked in Read-Only Mode.")
+        
+        target_strat = st.selectbox("Select Strategy Instance to Tune", ["AAPL - SMA Crossover", "MSFT - Mean Reversion"], disabled=True)
+        col1, col2 = st.columns(2)
+        col1.slider("Fast Moving Average Interval (Ticks)", 5, 50, 10, disabled=True)
+        col2.slider("Slow Moving Average Interval (Ticks)", 20, 200, 30, disabled=True)
+        
+        st.button("Push Configuration Settings", disabled=True)
+        
+        st.code("""
+# [ENHANCEMENT POINT: STRATEGY TUNE WRITE TRIGGER]
+# In the write-enabled model, clicking the submit button executes this gRPC channel pipeline:
+#
+# import grpc
+# import strategy_tuning_pb2 as pb
+# import strategy_tuning_pb2_grpc as pb_grpc
+# 
+# def push_strategy_update(strategy_id, fast_ma, slow_ma):
+#     # We route parameters directly to the Envoy load balancer (tick-lb) proxying strategy endpoints
+#     with grpc.insecure_channel("tick-lb:50051") as channel:
+#         stub = pb_grpc.StrategyTunerStub(channel)
+#         result = stub.UpdateParams(pb.ParamRequest(
+#             strategy_id=strategy_id,
+#             parameters={"fast_period": str(fast_ma), "slow_period": str(slow_ma)}
+#         ))
+#     return result.success
+        """, language="python")
+
+# --- Page 4: System Telemetry ---
+elif page == "System Telemetry":
+    st.title("📊 Observability Stack (Installation Preview)")
+    st.markdown("System metrics telemetry is managed out-of-band by a dedicated **Prometheus** and **Grafana** stack.")
+
+    st.markdown("""
+    The observability stack is deployed to scrape performance details from services, databases, and load balancers. 
+    Metrics collected include:
+    - **JVM & Memory Footprints**: CPU, GC times, and Heap utilization inside `order-processing-service` and `order-management-service` via Micrometer.
+    - **Network Latencies**: Request rates and RPC roundtrip times on `tick-lb` (Envoy) and connection gateways.
+    - **Kafka Consumer Lag**: Lag statistics for topics (`trading-signals`, `raw-order-updates`).
+    """)
+
+    # Interactive placeholder layout
+    st.divider()
+    st.subheader("Grafana Dashboard Embed Placeholder")
+    
+    st.info("ℹ️ Once Grafana panels are fully populated, they will be embedded directly in the panel below.")
+    
+    # Render a mock chart showing a CPU performance indicator using Plotly
+    t_vals = [time.time() - (60 - i) for i in range(60)]
+    cpu_vals = [25.4, 28.1, 22.9, 31.4, 38.0, 35.2, 28.9, 29.5, 30.1, 26.2, 45.4, 49.8] * 5
+    cpu_vals = cpu_vals[:60]
+    
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=t_vals, y=cpu_vals, mode='lines+markers', name='Global System CPU (%)',
+                             line=dict(color='#EA580C', width=2)))
+    fig.update_layout(
+        title="Active Telemetry Feed Scrape (Simulated System CPU %)",
+        xaxis_title="Time",
+        yaxis_title="CPU Utilization %",
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='#94A3B8')
+    )
+    st.plotly_chart(fig, use_container_width=True)

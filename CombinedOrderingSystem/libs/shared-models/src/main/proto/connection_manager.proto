@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package trading.connection;
+
+option java_multiple_files = true;
+option java_package = "com.trading.connection.grpc";
+
+// Market Data Subscription Interface
+service MarketDataService {
+  // Streams real-time market data ticks (Server Streaming)
+  rpc StreamMarketData (MarketDataRequest) returns (stream MarketDataResponse);
+
+  // Queries historical bars for strategy warm-up (Unary)
+  rpc GetHistoricalBars (HistoricalBarsRequest) returns (HistoricalBarsResponse);
+}
+
+// Order Operations Interface
+service OrderExecutionService {
+  // Submits an order to the broker (Proxy Unary)
+  rpc PlaceOrder (OrderRequest) returns (OrderResponse);
+
+  // Queries order fill and state details (Proxy Unary)
+  rpc GetOrderStatus (OrderStatusRequest) returns (OrderStatusResponse);
+}
+
+
+message MarketDataRequest {
+  repeated string symbols = 1;
+}
+
+message MarketDataResponse {
+  string symbol = 1;
+  double open = 2;
+  double high = 3;
+  double low = 4;
+  double close = 5;
+  int64 volume = 6;
+  string timestamp = 7;
+  string provider = 8; // The broker/data provider identifier (e.g. "alpaca")
+}
+
+message OrderRequest {
+  string symbol = 1;
+  int32 qty = 2;
+  string side = 3;       // "BUY" or "SELL"
+  string order_type = 4; // "market" or "limit"
+  double limit_price = 5;
+}
+
+message OrderResponse {
+  string order_id = 1;
+  string symbol = 2;
+  int32 qty = 3;
+  string side = 4;
+  string status = 5;
+  string client_order_id = 6;
+  string order_type = 7;
+  string provider = 8; // The executing broker identifier
+}
+
+message OrderStatusRequest {
+  string order_id = 1;
+}
+
+message OrderStatusResponse {
+  string order_id = 1;
+  string symbol = 2;
+  int32 qty = 3;
+  string side = 4;
+  string status = 5;
+  int32 filled_qty = 6;
+  double filled_avg_price = 7;
+  string client_order_id = 8;
+  string provider = 9; // The executing broker identifier
+}
+
+message HistoricalBarsRequest {
+  string symbol = 1;
+  int32 limit = 2; // number of warm-up bars to fetch
+}
+
+message HistoricalBarsResponse {
+  repeated MarketDataResponse bars = 1;
+}
