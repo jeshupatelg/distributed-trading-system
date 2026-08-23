@@ -1,5 +1,4 @@
 # Antigravity repo-level configurations & outputs
-.agents/
 
 # Python Virtual Environments
 .venv/
