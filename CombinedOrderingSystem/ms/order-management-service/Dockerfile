@@ -5,7 +5,7 @@ WORKDIR /build
 # Copy root pom and modules required for compilation
 COPY pom.xml .
 COPY libs ./libs
-COPY ms/order-management-service ./ms/order-management-service
+COPY ms ./ms
 
 # Build the specific module along with its local library dependencies
 RUN mvn clean package -pl ms/order-management-service -am -DskipTests
