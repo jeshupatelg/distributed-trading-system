@@ -157,6 +157,7 @@ services:
       - order-processing-service
 
 
+
   # Quant/UI Dashboard Service
   quant-dashboard:
     build:
@@ -181,7 +182,7 @@ services:
     image: prom/prometheus:latest
     container_name: prometheus
     ports:
-      - "9090:9090"
+      - "9091:9090"
     volumes:
       - ./config/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     extra_hosts:
