@@ -1,0 +1,53 @@
+@startuml
+title OMS - Order Update & Reconciliation Sequence
+
+participant "Kafka" as Kafka
+participant "OrderUpdateConsumer" as OUC
+participant "OrderResolutionService" as ORS
+participant "Redis" as Redis
+participant "SQL Database" as DB
+participant "ReconciliationJob (Cron)" as Cron
+participant "Connection Manager (gRPC)" as CM
+
+== Live Update Path ==
+Kafka -> OUC : raw-order-update
+activate OUC
+OUC -> ORS : processUpdate(status)
+activate ORS
+
+ORS -> DB : Check if already COMPLETED (Idempotency)
+DB --> ORS : (Status)
+
+alt Is NOT Completed
+    ORS -> Redis : SREM orders:pending {orderId}
+    ORS -> Redis : DECRBY blocked_margin {amount}
+    ORS -> Redis : INCRBY settled_positions {amount}
+    
+    ORS -> DB : UPDATE order SET status = 'COMPLETED'
+    
+    ORS -> Kafka : Publish order-complete-event
+end
+deactivate ORS
+deactivate OUC
+
+== Cron Reconciliation Path ==
+Cron -> Redis : SMEMBERS orders:pending
+activate Cron
+Redis --> Cron : [stalled_order_id]
+
+Cron -> CM : GetOrderStatus(stalled_order_id)
+activate CM
+CM -> Broker : GET /v2/orders/{id}
+Broker --> CM : OrderState
+CM --> Cron : OrderStateResponse
+deactivate CM
+
+Cron -> ORS : processUpdate(OrderStateResponse)
+activate ORS
+ORS -> Redis : SREM orders:pending
+ORS -> DB : UPDATE order SET status = 'COMPLETED'
+ORS -> Kafka : Publish order-complete-event
+deactivate ORS
+deactivate Cron
+
+@enduml

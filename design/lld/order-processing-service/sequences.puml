@@ -1,0 +1,40 @@
+@startuml
+title OPS - Order Submission Sequence
+
+participant "Kafka" as Kafka
+participant "SignalConsumer" as SC
+participant "RiskManager" as RM
+participant "Redis" as Redis
+participant "OrderSubmissionEngine" as OSE
+participant "Connection Manager (gRPC)" as CM
+
+Kafka -> SC : signal-event
+activate SC
+SC -> RM : evaluate(signal)
+activate RM
+
+RM -> Redis : GET account_balance
+Redis --> RM : balance
+
+RM -> Redis : GET blocked_margin
+Redis --> RM : margin
+
+alt Sufficient Funds
+    RM -> Redis : SADD orders:pending {orderId}
+    RM -> Redis : INCRBY blocked_margin {amount}
+    RM --> SC : Validation Passed
+    
+    SC -> OSE : executeOrder(orderCtx)
+    activate OSE
+    OSE -> CM : PlaceOrder(gRPC Request)
+    CM --> OSE : Acknowledged
+    OSE -> Kafka : Publish order-create-event
+    deactivate OSE
+
+else Insufficient Funds
+    RM --> SC : Validation Failed
+end
+deactivate RM
+deactivate SC
+
+@enduml

@@ -1,0 +1,31 @@
+@startuml
+title OPS Component Architecture
+
+package "Order Processing Service (OPS)" {
+    
+    interface "KafkaListener" as Listener
+    interface "gRPC Stub" as GrpcClient
+    
+    component "SignalConsumer" as SC
+    component "RiskManager" as RM
+    component "RedisStateAccessor" as RSA
+    component "OrderSubmissionEngine" as OSE
+    component "KafkaPublisher" as Pub
+
+    Listener -> SC : signal-event
+    SC --> RM : validate signal
+    RM --> RSA : lock margin & cache check
+    RM --> OSE : approved order
+    OSE --> GrpcClient : PlaceOrder (Unary)
+    OSE --> Pub : publish order-create-event
+}
+
+database "Redis Cache" as Redis
+queue "Kafka Cluster" as Kafka
+node "Connection Managers" as CM
+
+RSA <--> Redis : get/set lock
+Pub --> Kafka : produce
+GrpcClient --> CM : grpc transmission
+
+@enduml

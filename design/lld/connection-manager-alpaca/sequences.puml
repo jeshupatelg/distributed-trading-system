@@ -1,0 +1,56 @@
+@startuml
+title Connection Manager (Alpaca) Sequence Flows
+
+' Formatting configurations
+skinparam BackgroundColor #F9FAFB
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI", Arial, sans-serif
+
+' Participant Definitions
+participant "Alpaca API" as Alpaca
+box "Connection Manager (Alpaca)" #EFF6FF
+  participant "WS Client" as WSClient
+  participant "gRPC Server" as gRPCServer
+  participant "Order Controller" as OrderCtrl
+  participant "Kafka Producer" as KafkaProd
+end box
+participant "Load Balancer" as LB
+participant "Combined OMS" as COS
+participant "Kafka Cluster" as Kafka
+
+== Flow 1: Live Market Data Streaming ==
+autonumber 1.1
+Alpaca -> WSClient : Stream raw stock candle (Websocket)
+WSClient -> gRPCServer : Handle bar callback
+gRPCServer -> LB : Broadcast bar payload (gRPC Server Stream)
+LB -> : Route to SignalGen replicas (gRPC)
+
+== Flow 2: Order Submission ==
+autonumber 2.1
+COS -> gRPCServer : PlaceOrder(OrderRequest) (gRPC Unary)
+gRPCServer -> OrderCtrl : Submit order payload
+OrderCtrl -> Alpaca : submit_order() (REST HTTP POST)
+Alpaca --> OrderCtrl : Return Order confirmation
+OrderCtrl --> gRPCServer : Format OrderResponse DTO
+gRPCServer --> COS : Return OrderResponse
+COS -> : SADD to orders:pending & block margin (Redis)
+
+== Flow 3: Live Order Status Forwarding ==
+autonumber 3.1
+Alpaca -> WSClient : Order fill/update message (Websocket)
+WSClient -> KafkaProd : Callback triggered (raw JSON)
+KafkaProd -> Kafka : Publish raw-order-update event (Kafka Topic)
+Kafka -> COS : Consume raw-order-update
+COS -> : SREM from orders:pending & update settled state (Redis)
+
+== Flow 4: Order Status Reconciliation (Fallback) ==
+autonumber 4.1
+COS -> gRPCServer : GetOrderStatus(OrderQuery) (gRPC Unary)
+gRPCServer -> OrderCtrl : Fetch order ID status
+OrderCtrl -> Alpaca : get_order_by_id() (REST HTTP GET)
+Alpaca --> OrderCtrl : Return active Order details
+OrderCtrl --> gRPCServer : Format OrderStatusResponse DTO
+gRPCServer --> COS : Return OrderStatusResponse
+
+@enduml

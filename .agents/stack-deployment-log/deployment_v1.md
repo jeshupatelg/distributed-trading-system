@@ -38,7 +38,7 @@ First deployment of the `distributed-trading-system` microservices stack.
 ### [2026-08-21T03:47:00+05:30] Deployment Execution Initiated
 * **Status**: Starting deployment run.
 * **Tasks completed**: 
-  * Defined dependency matrix in [deployment_dependency_matrix.md](file:///C:/Users/jeshu/Projects/system-design/lld/distributed-trading-design/hld/deployment_dependency_matrix.md).
+  * Defined dependency matrix in [deployment_dependency_matrix.md](file:///c:/Users/jeshu/Projects/distributed-trading-system/design/hld/deployment_dependency_matrix.md).
 * **Next step**: Verify access/status of Core Infrastructure containers (`homeserver-pg`, `homeserver-redis`, `kafka`).
 
 ### [2026-08-21T03:47:05+05:30] Blocked - Missing Whitelist Permissions in MCP Gate

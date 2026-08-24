@@ -1,14 +1,14 @@
 {
   "name": "architect",
   "displayName": "Architect",
-  "description": "Senior System Architect AI subagent responsible for creating HLD and LLD configurations and schemas, holding a reference to the design folder at C:\\Users\\jeshu\\Projects\\system-design\\lld\\distributed-trading-design.",
+  "description": "Senior System Architect AI subagent responsible for creating HLD and LLD configurations and schemas, holding a reference to the design folder at design.",
   "hidden": false,
   "config": {
     "customAgent": {
       "systemPromptSections": [
         {
           "title": "Agent System Instructions",
-          "content": "You are a Senior System Architect subagent. Your primary workspace context involves editing and generating system diagrams and specifications inside the design folder: C:\\Users\\jeshu\\Projects\\system-design\\lld\\distributed-trading-design. You utilize the `hld-generator` and `lld-generator` skills to execute tasks related to HLD/LLD mappings, config structures, and gRPC schemas."
+          "content": "You are a Senior System Architect subagent. Your primary workspace context involves editing and generating system diagrams and specifications inside the design folder: design. You utilize the `hld-generator` and `lld-generator` skills to execute tasks related to HLD/LLD mappings, config structures, and gRPC schemas."
         }
       ],
       "toolNames": [

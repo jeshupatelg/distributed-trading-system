@@ -1,0 +1,20 @@
+@startuml
+package "tick-lb" {
+  [Envoy Proxy] as Envoy
+}
+
+cloud "Upstream Clients" {
+  [Market Data Feed] as MarketData
+}
+
+package "Signal Generators" {
+  [signal-gen-aapl] as AAPLGen
+  [signal-gen-msft] as MSFTGen
+  [signal-gen-default] as DefaultGen
+}
+
+MarketData --> Envoy : gRPC stream (ticks with x-ticker header)
+Envoy --> AAPLGen : Route (x-ticker: AAPL)
+Envoy --> MSFTGen : Route (x-ticker: MSFT)
+Envoy --> DefaultGen : Default Route
+@enduml

@@ -1,0 +1,26 @@
+@startuml
+actor "Market Data Provider" as MD
+participant "tick-lb (Envoy)" as LB
+participant "signal-gen-aapl" as AAPL
+participant "signal-gen-msft" as MSFT
+
+MD -> LB : gRPC Tick {x-ticker: "AAPL"}
+activate LB
+LB -> LB : Match header 'x-ticker'
+LB -> AAPL : Forward gRPC Tick
+activate AAPL
+AAPL --> LB : ACK
+deactivate AAPL
+LB --> MD : ACK
+deactivate LB
+
+MD -> LB : gRPC Tick {x-ticker: "MSFT"}
+activate LB
+LB -> LB : Match header 'x-ticker'
+LB -> MSFT : Forward gRPC Tick
+activate MSFT
+MSFT --> LB : ACK
+deactivate MSFT
+LB --> MD : ACK
+deactivate LB
+@enduml

@@ -1,0 +1,184 @@
+@startuml
+title Distributed Trading System High-Level Design (HLD)
+
+' Formatting configurations for dark blocks on light/white background
+skinparam BackgroundColor #F9FAFB
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI", Arial, sans-serif
+
+skinparam rectangle {
+    BackgroundColor #1F2937
+    BorderColor #111827
+    FontColor #FFFFFF
+}
+
+skinparam database {
+    FontColor #FFFFFF
+}
+
+skinparam component {
+    BackgroundColor #374151
+    BorderColor #1F2937
+    FontColor #FFFFFF
+}
+
+skinparam arrow {
+    FontSize 10
+}
+
+' Legend for communication protocols
+legend top left
+  |= Color |= Protocol |
+  |<#2563EB>| gRPC (Streaming & Unary) |
+  |<#16A34A>| HTTP / HTTPS / REST |
+  |<#EA580C>| Kafka Pub/Sub Events |
+  |<#7C3AED>| Redis Protocol (Cache Access) |
+  |<#475569>| SQL (Database JDBC/ODBC) |
+endlegend
+
+' 1. External API Tier
+rectangle "Alpaca API" as Alpaca #5B21B6;line:4C1D95;line.bold;text:FFFFFF {
+  [Market Data Websocket] #FFFFFF;line:C4B5FD;text:1F2937
+  [Order REST API] #FFFFFF;line:C4B5FD;text:1F2937
+}
+
+rectangle "Broker X API" as BrokerX #111827;line:030712;line.bold;text:FFFFFF {
+  [Market Data WS (X)] #FFFFFF;line:475569;text:1F2937
+  [Order API (X)] #FFFFFF;line:475569;text:1F2937
+}
+
+' 2. Ingestion Tier (gRPC & WebSocket Servers)
+rectangle "Connection Manager (Alpaca)" as ConnMgrAlpaca #1E3A8A;line:172554;line.bold;text:FFFFFF {
+  [Alpaca SDK Session] #FFFFFF;line:93C5FD;text:1F2937
+  [gRPC Server (Alpaca)] #FFFFFF;line:93C5FD;text:1F2937
+}
+
+rectangle "Connection Manager (Broker X)" as ConnMgrX #0F172A;line:475569;line.bold;text:FFFFFF {
+  [Broker X Session] #FFFFFF;line:94A3B8;text:1F2937
+  [gRPC Server (Broker X)] #FFFFFF;line:94A3B8;text:1F2937
+}
+
+' 3. Shared Cache Layer
+database "Redis Cache" as Cache #9D174D;line:831843;line.bold;text:FFFFFF {
+  [Account Balance & Equity] #FFFFFF;text:1F2937
+  [Open Positions] #FFFFFF;text:1F2937
+  [Blocked Margin (Local Lock)] #FFFFFF;text:1F2937
+  [Pending Order IDs (orders:pending)] #FFFFFF;text:1F2937
+}
+
+' 4. SQL Database Layer
+database "SQL Database (RDBMS)" as DB #0F172A;line:020617;line.bold;text:FFFFFF {
+  [Order History (tracked_orders)] #FFFFFF;text:1F2937
+  [Trade Activity Logs] #FFFFFF;text:1F2937
+}
+
+' 5. LoadBalancer Tier
+rectangle "Load Balancer" as LB #0369A1;line:075985;line.bold;text:FFFFFF {
+  [Route by Ticker] #FFFFFF;line:38BDF8;text:1F2937
+}
+
+' 6. Signal Generator Replicas
+package "Signal Generators" {
+  rectangle "SignalGen-A (Ticker1)" as SG1 #3730A3;line:312E81;line.bold;text:FFFFFF
+  rectangle "SignalGen-B (Ticker1)" as SG2 #3730A3;line:312E81;line.bold;text:FFFFFF
+  rectangle "SignalGen-C (Ticker2)" as SG3 #3730A3;line:312E81;line.bold;text:FFFFFF
+}
+
+' 7. Message Broker Tier (Pub/Sub)
+rectangle "Kafka Cluster" as Kafka #C2410C;line:7C2D12;line.bold;text:FFFFFF {
+  [order-create-event\nraw-order-update\norder-complete-event\nsignal-event] #FFFFFF;line:FDBA74;text:1F2937
+}
+
+' 8. Order Services
+rectangle "Order Processing Service (OPS)" as OPS #065F46;line:064E3B;line.bold;text:FFFFFF {
+  folder "OPS Core (Low-Latency Thread Pool)" {
+    [Risk Manager] #FFFFFF;line:A7F3D0;text:1F2937
+    [Order Submission] #FFFFFF;line:A7F3D0;text:1F2937
+  }
+}
+
+rectangle "Order Management Service (OMS)" as OMS #065F46;line:064E3B;line.bold;text:FFFFFF {
+  folder "OMS Tracker (Background Thread Pool)" {
+    [Order Tracking] #FFFFFF;line:A7F3D0;text:1F2937
+    [Reconciliation Cron] #FFFFFF;line:A7F3D0;text:1F2937
+  }
+}
+
+' 9. UI and Dashboard Tier
+rectangle "Quant/UI Dashboard Service" as Dashboard #9F1239;line:881337;line.bold;text:FFFFFF {
+  [Web Server (BFF)] #FFFFFF;line:FECDD3;text:1F2937
+  [Interactive UI (HTTPS)] #FFFFFF;line:FECDD3;text:1F2937
+}
+
+' 10. Observability Tier
+rectangle "Observability Stack" as ObsStack #475569;line:334155;line.bold;text:FFFFFF {
+  [Prometheus Daemon] as Prom #FFFFFF;line:94A3B8;text:1F2937
+  [Grafana Dashboard UI] as Grafana #FFFFFF;line:94A3B8;text:1F2937
+}
+
+' --- Connectivity & Protocols ---
+
+' Session Establishment
+ConnMgrAlpaca -[#16A34A]up-> Alpaca : 1.a. ESTABLISH SESSION (REST & WS)
+ConnMgrX -[#16A34A]up-> BrokerX : 1.b. ESTABLISH SESSION (REST & WS)
+
+' Streaming Market Data (gRPC)
+ConnMgrAlpaca -[#2563EB]-> LB : 2.a. Stream Ticks (gRPC)
+ConnMgrX -[#2563EB]-> LB : 2.b. Stream Ticks (gRPC)
+LB -[#2563EB]-> SG1 : 3. Route stream (gRPC)
+LB -[#2563EB]-> SG2 : 3. Route stream (gRPC)
+LB -[#2563EB]-> SG3 : 3. Route stream (gRPC)
+
+' Signal generation to Kafka
+SG1 -[#EA580C]-> Kafka : 4. Publish signal-event (Kafka)
+SG2 -[#EA580C]-> Kafka : 4. Publish signal-event (Kafka)
+SG3 -[#EA580C]-> Kafka : 4. Publish signal-event (Kafka)
+
+' Order Placement Path
+Kafka -[#EA580C]-> OPS : 5. Consume signal-event (Kafka)
+OPS -[#7C3AED]left-> Cache : 6. Read balance, add Blocked Margin & SADD to pending set (Redis)
+OPS -[#2563EB]up-> ConnMgrAlpaca : 7.a. Submit Order to Alpaca (gRPC Unary)
+OPS -[#2563EB]up-> ConnMgrX : 7.b. Submit Order to Broker X (gRPC Unary)
+OPS -[#EA580C]-> Kafka : 8. Publish order-create-event (Kafka)
+Kafka -[#EA580C]-> OMS : 8.5. Consume order-create-event (Kafka) [ASYNC]
+OMS -[#475569]down-> DB : 8.6. Write initial PENDING order state (SQL) [ASYNC]
+
+' Real-Time Live Order Updates (Stateless CM forwarding through Kafka)
+Alpaca -[#16A34A]-> ConnMgrAlpaca : 9.a. Stream Order updates (Websocket)
+ConnMgrAlpaca -[#EA580C]-> Kafka : 10.a. Publish raw-order-update (Kafka)
+BrokerX -[#16A34A]-> ConnMgrX : 9.b. Stream Order updates (Websocket)
+ConnMgrX -[#EA580C]-> Kafka : 10.b. Publish raw-order-update (Kafka)
+
+Kafka -[#EA580C]-> OMS : 11. Consume raw-order-update event (Kafka)
+
+' Cache updates and event normalization
+OMS -[#7C3AED]left-> Cache : 12. Update settled state, clear margin & SREM pending order (Redis)
+OMS -[#475569]down-> DB : 12.5. Update order record to COMPLETED/FAILED (SQL)
+OMS -[#EA580C]-> Kafka : 13. Publish order-complete-event (Kafka) [IDEMPOTENT BY ORDER ID]
+
+' Reconciliation & tracking fallback path
+OMS -[#7C3AED]left-> Cache : 14. SMEMBERS pending order IDs (Redis)
+OMS -[#2563EB]up-> ConnMgrAlpaca : 14.5. Fallback / Reconciliation Query (gRPC Unary)
+ConnMgrAlpaca -[#16A34A]up-> Alpaca : 15. Proxy REST query (REST)
+
+' UI / Dashboard Connections
+Dashboard -[#7C3AED]left-> Cache : 16. Read Live Account / Positions (Redis)
+Dashboard -[#475569]left-> DB : 16.5. Query Historical Orders & Activity Logs (SQL)
+Kafka -[#EA580C]-> Dashboard : 17. Consume order-complete-events (Kafka)
+
+actor "Trader / User" as Trader
+Trader -[#16A34A]-> Dashboard : 18. Access Web UI (HTTPS)
+
+' Observability Telemetry Scrapes (Installation Scope)
+Prom -[#16A34A]down-> ConnMgrAlpaca : 19. Scrape Python metrics
+Prom -[#16A34A]down-> OPS : 19. Scrape Java JVM metrics
+Prom -[#16A34A]down-> OMS : 19. Scrape Java JVM metrics
+Prom -[#16A34A]down-> LB : 19. Scrape Envoy stats
+Grafana -[#16A34A]right-> Prom : 20. Query time-series metrics
+
+' Layout helpers
+SG1 -[hidden]right-> SG2
+SG2 -[hidden]right-> SG3
+@enduml
+

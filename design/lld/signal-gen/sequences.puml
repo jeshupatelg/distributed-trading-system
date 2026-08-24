@@ -1,0 +1,43 @@
+@startuml
+autonumber
+
+actor System
+participant "connection-manager-alpaca" as Broker
+participant "tick-lb (Envoy)" as Proxy
+participant SignalGeneratorServer as Server
+participant StrategyLoader as Loader
+participant gRPCMarketDataClient as Client
+participant "strategy: BaseStrategy" as Strat
+participant StrategyRunner as Runner
+participant KafkaSignalPublisher as Publisher
+queue "Kafka: trading-signals" as Topic
+
+== Startup & Strategy Initialization ==
+System -> Server: start()
+Server -> Loader: load(file_path, class_name, parameters)
+Loader -> Strat: new() & initialize(parameters)
+Loader --> Server: strategy instance
+Server -> Client: consume_market_data(strategy)
+
+== Historical Data Warmup ==
+Client -> Proxy: GetHistoricalBars(symbol, limit) [x-ticker: AAPL]
+Proxy -> Broker: Forward GetHistoricalBars
+Broker --> Client: HistoricalBarsResponse (bars)
+loop For each historical bar
+    Client -> Strat: on_bar(bar) [signals suppressed]
+end
+
+== Live Market Data Pull Stream Flow ==
+Client -> Proxy: StreamMarketData(req) [x-ticker: AAPL]
+Proxy -> Broker: Forward StreamMarketData
+loop For each streamed market data bar
+    Broker -> Client: MarketDataResponse (bar)
+    Client -> Runner: process_bar(bar)
+    Runner -> Strat: on_bar(bar)
+    Strat --> Runner: signal dict (BUY/SELL)
+    alt signal is not None
+        Runner -> Publisher: publish_signal(signal)
+        Publisher -> Topic: produce(signal)
+    end
+end
+@enduml

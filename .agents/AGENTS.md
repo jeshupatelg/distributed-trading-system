@@ -11,7 +11,7 @@ This is the repository-level configuration for Antigravity AI agents in the `dis
 
 ### 1. architect
 *   **Role**: Senior System Architect
-*   **Design Folder Context**: `C:\Users\jeshu\Projects\system-design\lld\distributed-trading-design`
+*   **Design Folder Context**: `design`
 *   **Assigned Skills**: `hld-generator`, `lld-generator`
 *   **Task Prompt**: Responsible for translating requirement catalogs into high-level and low-level design structures, generating PlantUML diagrams (`hld.puml`, `components.puml`, `sequences.puml`), and documenting execution specifications (`hld.md`, `lld.md`, `config.md`).
 

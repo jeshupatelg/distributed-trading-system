@@ -1,0 +1,49 @@
+@startuml
+title Quant Dashboard Component Architecture
+
+package "Quant Dashboard Service (Streamlit)" {
+    
+    component "app.py (AppLayout)" as App
+    
+    package "UI Pages" {
+        component "PortfolioPage" as PagePortfolio
+        component "OrderPage" as PageOrder
+        component "ProviderPage" as PageProvider
+        component "PerformancePage" as PagePerf
+    }
+
+    package "Connectors (Pull)" {
+        component "RedisClient" as RedisConn
+        component "SqlClient" as SqlConn
+    }
+
+    package "Future Connectors (Push)" {
+        component "gRPCActionClient" as GrpcAction
+    }
+    
+    App --> PagePortfolio : routes
+    App --> PageOrder : routes
+    App --> PageProvider : routes
+    App --> PagePerf : routes
+
+    PagePortfolio --> RedisConn : query balance / positions
+    PageOrder --> SqlConn : query order history
+    
+    ' Future connections
+    PagePortfolio .up.> GrpcAction : [ENHANCEMENT] trigger strategy change
+    PageOrder .up.> GrpcAction : [ENHANCEMENT] trigger cancel order
+}
+
+database "Redis Cache" as Redis
+database "SQL DB" as SQL
+node "Grafana Server" as Grafana
+node "Envoy Proxy (tick-lb)" as LB
+
+RedisConn --> Redis : read-only query
+SqlConn --> SQL : read-only query (SELECT)
+PagePerf --> Grafana : HTTPS iframe embed
+
+' Future push triggers
+GrpcAction .down.> LB : [ENHANCEMENT] gRPC (UpdateStrategy / PlaceOrder)
+
+@enduml

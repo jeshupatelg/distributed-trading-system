@@ -1,0 +1,54 @@
+@startuml
+package "Signal Generator Engine" {
+    class SignalGeneratorServer {
+        + start()
+        + stop()
+    }
+
+    class StrategyLoader {
+        + load(file_path: str, class_name: str, parameters: dict): BaseStrategy
+    }
+
+    abstract class BaseStrategy {
+        + {abstract} initialize(parameters: dict): void
+        + {abstract} on_bar(bar_data: dict): dict
+    }
+
+    class StrategyRunner {
+        - strategy: BaseStrategy
+        - publisher: KafkaSignalPublisher
+        + process_bar(bar_data: dict): void
+    }
+
+    class gRPCMarketDataClient {
+        - runner: StrategyRunner
+        + warmup_strategy(): void
+        + consume_market_data(): void
+    }
+
+    class KafkaSignalPublisher {
+        - producer: KafkaProducer
+        + publish_signal(signal: dict): void
+    }
+
+    SignalGeneratorServer --> StrategyLoader
+    SignalGeneratorServer --> gRPCMarketDataClient
+    gRPCMarketDataClient --> StrategyRunner
+    StrategyRunner --> BaseStrategy
+    StrategyRunner --> KafkaSignalPublisher
+}
+
+package "Custom Dynamic Modules" {
+    class SmaCrossoverStrategy {
+        + initialize(parameters: dict): void
+        + on_bar(bar_data: dict): dict
+    }
+    class MeanReversionStrategy {
+        + initialize(parameters: dict): void
+        + on_bar(bar_data: dict): dict
+    }
+
+    SmaCrossoverStrategy -up-|> BaseStrategy
+    MeanReversionStrategy -up-|> BaseStrategy
+}
+@enduml

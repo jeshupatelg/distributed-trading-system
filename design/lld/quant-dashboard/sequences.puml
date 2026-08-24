@@ -1,0 +1,55 @@
+@startuml
+title Quant Dashboard - Sequence Flows
+
+actor "Operator / Trader" as Operator
+participant "Streamlit AppLayout" as App
+participant "PortfolioPage" as PagePort
+participant "OrderPage" as PageOrder
+participant "Redis Cache" as Redis
+participant "SQL Database" as DB
+
+== Live Pull Refresh Path (Every 5s or Page Load) ==
+
+Operator -> App : Access / Refresh UI
+activate App
+
+App -> PagePort : Render Portfolio
+activate PagePort
+PagePort -> Redis : GET account:balance
+Redis --> PagePort : balance_value
+PagePort -> Redis : KEYS position:*
+Redis --> PagePort : [position keys]
+PagePort -> Redis : MGET [position keys]
+Redis --> PagePort : [positions values]
+PagePort --> App : Render Plotly chart & widgets
+deactivate PagePort
+
+App -> PageOrder : Render Order History
+activate PageOrder
+PageOrder -> DB : SELECT * FROM tracked_orders LIMIT 100
+DB --> PageOrder : ResultSet
+PageOrder --> App : Render interactive table
+deactivate PageOrder
+
+App --> Operator : View Dashboard
+deactivate App
+
+== Future Push Action Path [ENHANCEMENT] ==
+
+participant "gRPCActionClient" as Grpc
+participant "Envoy Proxy (tick-lb)" as LB
+
+Operator -> App : Trigger Action (e.g. Change Strategy Params)
+activate App
+App -> Grpc : UpdateStrategy(Params)
+activate Grpc
+Grpc -> LB : gRPC UpdateStrategyRequest
+activate LB
+LB --> Grpc : UpdateStrategyResponse (Success)
+deactivate LB
+Grpc --> App : Action Complete Notification
+deactivate Grpc
+App --> Operator : Display Success Alert
+deactivate App
+
+@enduml

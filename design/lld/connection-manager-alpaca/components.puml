@@ -1,0 +1,78 @@
+@startuml
+title Connection Manager (Alpaca) Component Diagram
+
+' Formatting configurations for a clean, modern look
+skinparam BackgroundColor #F9FAFB
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI", Arial, sans-serif
+
+skinparam rectangle {
+    BackgroundColor #1F2937
+    BorderColor #111827
+    FontColor #FFFFFF
+}
+
+skinparam component {
+    BackgroundColor #374151
+    BorderColor #1F2937
+    FontColor #FFFFFF
+}
+
+skinparam interface {
+    BackgroundColor #F5F3FF
+    BorderColor #7C3AED
+}
+
+' External Interfaces
+interface "gRPC (Port 50051)" as gRPCPort
+interface "REST/HTTP (Port 8000)" as RESTPort
+interface "Alpaca Websocket" as AlpacaWSPort
+interface "Alpaca REST API" as AlpacaRESTPort
+interface "Kafka Broker" as KafkaPort
+
+package "Connection Manager (Alpaca) Container" #EFF6FF;line:2563EB;line.bold;text:000000 {
+  
+  [gRPC Server Interface] as gRPCServer
+  [FastAPI / REST Server] as RESTServer
+  
+  package "Order Execution Engine" {
+    [Order Controller] as OrderCtrl
+    [Alpaca REST Wrapper] as AlpacaRESTWrap
+  }
+
+  package "Real-Time Streaming Engine" {
+    [Stream Handler] as StreamHandler
+    [gRPC Stream Broadcaster] as StreamBroadcast
+    [Alpaca Websocket Client] as AlpacaWSClient
+  }
+  
+  package "Event Publisher" {
+    [Kafka Event Producer] as KafkaProducer
+  }
+}
+
+' Map Interfaces to Server entrypoints
+gRPCPort -down-> gRPCServer
+RESTPort -down-> RESTServer
+
+' Order Placement Flow
+gRPCServer -down-> OrderCtrl : 1. Submit Order / Status Query (gRPC)
+OrderCtrl -down-> AlpacaRESTWrap : 2. Translate to Alpaca Requests
+AlpacaRESTWrap -down-> AlpacaRESTPort : 3. Execute HTTP Call (REST)
+
+' Market Data Streaming Flow
+AlpacaWSPort -up-> AlpacaWSClient : 1. Stream Live Candles
+AlpacaWSClient -up-> StreamHandler : 2. Callback Processing
+StreamHandler -up-> StreamBroadcast : 3. Forward JSON Tick
+StreamBroadcast -up-> gRPCServer : 4. Broadcast to Subscribers
+
+' Live Order Update Forwarding
+AlpacaWSClient -down-> KafkaProducer : 5. Forward WebSocket Order Fills
+KafkaProducer -down-> KafkaPort : 6. Publish raw-order-update (Kafka)
+
+' Health Check endpoint
+RESTServer -down-> [Health Checker] : Probe checks
+[Health Checker] .down.> AlpacaRESTWrap : Verify credentials
+
+@enduml
