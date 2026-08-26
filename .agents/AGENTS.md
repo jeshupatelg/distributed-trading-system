@@ -6,6 +6,7 @@ This is the repository-level configuration for Antigravity AI agents in the `dis
 1. **Stateless Gateway**: All broker connection managers (e.g. `connection-manager-alpaca`, `connection-manager-x`) must remain completely stateless. All state mutations (RDBMS, Redis Cache) belong exclusively to the Order Management modules.
 2. **gRPC Interface**: Communication between internal components (Order Placement, Market Feed routing) must use gRPC.
 3. **Idempotency**: All order completion message consumption must validate order ID idempotency to avoid double-processing.
+4. **Deployment Logging & RCA**: For each deployment fix and redeployment action, the agent must immediately update the active deployment log file (e.g. `deployment_v2.md`). The update must document the issue's Root Cause Analysis (RCA) and the specific code or configuration fix applied.
 
 ## Specialized Agent Personas
 

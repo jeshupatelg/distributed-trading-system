@@ -20,7 +20,7 @@ Second deployment run of the `distributed-trading-system` microservices stack, u
 | **Order Management** | `order-management-service`| Order Management| **ACTIVE** | Yes (Success) | Database connection verified, scheduled cron running successfully. |
 | **Telemetry** | `prometheus` | Observability | **ACTIVE** | Yes (Success) | Reconfigured to host port 9091. Running successfully. |
 | **Visualization** | `grafana` | Observability | **ACTIVE** | Yes (Success) | Running successfully. |
-| **Dashboard** | `quant-dashboard` | UI / Frontend | **ACTIVE** | Yes (Success) | Deployed last, running Streamlit web server. |
+| **Dashboard** | `quant-dashboard` | UI / Frontend | **ACTIVE** | Yes (Success) | Deployed last, running Streamlit web server. Fixed empty positions and DB query bugs. |
 
 ---
 
@@ -92,10 +92,22 @@ Second deployment run of the `distributed-trading-system` microservices stack, u
 ### [2026-08-27T01:09:47+05:30] Success Op - Full Stack Deployment Completed
 * **Status**: Success (Fully Operational)
 * **Action**: Called `deploy_compose_stack` via MCP mapping to deploy the full stack.
-* **Output / Verification**:
-  * All containers built, running, and whitelisted.
-  * **`order-processing-service`**: Started successfully, listening on port 8081.
-  * **`order-management-service`**: Connected to database `trading_agent` successfully and executed reconciliation jobs on port 8082.
-  * **`quant-dashboard`**: Streamlit application started successfully on port 8501.
-  * **`connection-manager-alpaca`**: Fetching live ticks from Alpaca and streaming over gRPC.
-  * **`signal-gen-aapl`**: Consuming stream and processing strategy calculations.
+
+---
+
+## Post-Deploy Hotfix Log entries (UI/Dashboard Iterations)
+
+### [2026-08-27T01:27:00+05:30] Hotfix 1: Qualitative Color Sequence AttributeError (app.py)
+* **Issue**: Streamlit crashed when loading the Assets & Portfolio page.
+* **Root Cause Analysis (RCA)**: The Plotly Express interface on line 153 attempted to use `px.colors.qualitative.Slate` which does not exist in the qualitative color module of `_plotly_utils`.
+* **Fix Applied**: Changed the qualitative color scheme sequence to `px.colors.qualitative.Set2` in [`quant-dashboard/app.py`](file:///c:/Users/jeshu/Projects/distributed-trading-system/quant-dashboard/app.py).
+
+### [2026-08-27T01:28:44+05:30] Hotfix 2: Plotly Bar Chart Empty Dataframe ValueError (app.py)
+* **Issue**: Streamlit crashed again on load when no positions were present in the Redis cache.
+* **Root Cause Analysis (RCA)**: If the Redis keyspace contains no keys matching `position:*`, the `positions` dictionary evaluates to `{}`. Consequently, `pd.DataFrame()` initialized an empty frame with no column headings, causing `px.bar` to crash with `ValueError: Value of 'x' is not the name of a column in 'data_frame'. Expected one of [] but received: Ticker`.
+* **Fix Applied**: Added a check `if positions:` to guard the `px.bar` call, falling back to a Streamlit information notification (`st.info("No active positions found in the cache.")`) if the positions list is empty.
+
+### [2026-08-27T01:32:00+05:30] Hotfix 3: SQL Order History Column Mismatch (app.py)
+* **Issue**: The Order History page threw a database exception: `column "ticker" does not exist`.
+* **Root Cause Analysis (RCA)**: The dashboard SQL query select statement expected the column names `ticker`, `quantity`, and `timestamp` from `tracked_orders`. However, checking the database schema inside the PostgreSQL container via `psql -c "\d tracked_orders"` revealed the actual columns are `symbol`, `qty`, and `created_at`.
+* **Fix Applied**: Updated the SQL query statement to select columns using aliases mapping to the expected variable names: `SELECT order_id, symbol AS ticker, qty AS quantity, side, status, created_at AS timestamp, limit_price FROM tracked_orders ORDER BY created_at DESC LIMIT 100;`.

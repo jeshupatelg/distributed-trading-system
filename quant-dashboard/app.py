@@ -166,9 +166,9 @@ elif page == "Order History":
     if db_connected:
         try:
             query = """
-            SELECT order_id, ticker, quantity, side, status, timestamp, limit_price
+            SELECT order_id, symbol AS ticker, qty AS quantity, side, status, created_at AS timestamp, limit_price
             FROM tracked_orders
-            ORDER BY timestamp DESC
+            ORDER BY created_at DESC
             LIMIT 100;
             """
             orders_df = pd.read_sql_query(query, db_conn)
