@@ -12,33 +12,33 @@ Refer to the source diagram at [observability_ui_hld.puml](file:///c:/Users/jesh
 
 ```mermaid
 graph TD
-    subgraph Users [Actor Tier]
-        Trader[Trader / Operator]
+    subgraph Users ["Actor Tier"]
+        Trader["Trader / Operator"]
     end
 
-    subgraph UI [UI & Dashboard Tier]
-        Dashboard[Quant Dashboard (Streamlit)]
+    subgraph UI ["UI & Dashboard Tier"]
+        Dashboard["Quant Dashboard (Streamlit)"]
     end
 
-    subgraph Obs [Observability Tier]
-        Grafana[Grafana Dashboard UI]
-        Prom[Prometheus Daemon]
+    subgraph Obs ["Observability Tier"]
+        Grafana["Grafana Dashboard UI"]
+        Prom["Prometheus Daemon"]
     end
 
-    subgraph Core [Core Microservices]
-        OPS[Order Processing Service]
-        OMS[Order Management Service]
-        CM[Alpaca Connection Manager]
-        LB[Envoy Load Balancer]
+    subgraph Core ["Core Microservices"]
+        OPS["Order Processing Service"]
+        OMS["Order Management Service"]
+        CM["Alpaca Connection Manager"]
+        LB["Envoy Load Balancer"]
     end
 
-    subgraph Broker [Event Streaming]
-        Kafka[Kafka Cluster]
+    subgraph Broker ["Event Streaming"]
+        Kafka["Kafka Cluster"]
     end
 
-    subgraph State [State Storage Layer]
-        Redis[(Redis Cache)]
-        Postgres[(PostgreSQL DB)]
+    subgraph State ["State Storage Layer"]
+        Redis[("Redis Cache")]
+        Postgres[("PostgreSQL DB")]
     end
 
     %% User Connections
