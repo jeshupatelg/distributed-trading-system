@@ -1,0 +1,98 @@
+@startuml
+title Observability & UI Components High-Level Design (HLD)
+
+' Formatting configurations for dark blocks on light/white background
+skinparam BackgroundColor #F9FAFB
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI", Arial, sans-serif
+
+skinparam rectangle {
+    BackgroundColor #1F2937
+    BorderColor #111827
+    FontColor #FFFFFF
+}
+
+skinparam database {
+    BackgroundColor #0F172A
+    BorderColor #020617
+    FontColor #FFFFFF
+}
+
+skinparam component {
+    BackgroundColor #374151;
+    BorderColor #1F2937
+    FontColor #FFFFFF
+}
+
+skinparam arrow {
+    FontSize 10
+}
+
+' Legend for communication protocols
+legend top left
+  |= Color |= Protocol |
+  |<#16A34A>| HTTPS / HTTP REST |
+  |<#EA580C>| Kafka Event Consumption |
+  |<#7C3AED>| Redis Protocol (RESP) |
+  |<#475569>| SQL / JDBC Query |
+  |<#2563EB>| Metric Scraping (HTTP GET) |
+endlegend
+
+' Actor Tier
+actor "Trader / Operator" as Trader #1F2937
+
+' UI and Dashboard Tier
+rectangle "UI & Dashboard Tier" as UITier #9F1239;line:881337;line.bold;text:FFFFFF {
+  [Quant Dashboard (Streamlit)] as Dashboard #FFFFFF;line:FECDD3;text:1F2937
+}
+
+' Observability Tier
+rectangle "Observability Stack" as ObsTier #475569;line:334155;line.bold;text:FFFFFF {
+  [Grafana Dashboard UI] as Grafana #FFFFFF;line:94A3B8;text:1F2937
+  [Prometheus Daemon] as Prom #FFFFFF;line:94A3B8;text:1F2937
+}
+
+' Core Application Stack (Scrape targets)
+rectangle "Core Microservices" as CoreTier #065F46;line:064E3B;line.bold;text:FFFFFF {
+  [Order Processing Service (OPS)] as OPS #FFFFFF;line:A7F3D0;text:1F2937
+  [Order Management Service (OMS)] as OMS #FFFFFF;line:A7F3D0;text:1F2937
+  [Alpaca Connection Manager] as CMAlpaca #FFFFFF;line:A7F3D0;text:1F2937
+  [Envoy Load Balancer (tick-lb)] as TickLB #FFFFFF;line:A7F3D0;text:1F2937
+}
+
+' Message Broker
+rectangle "Message Broker" as BrokerTier #C2410C;line:7C2D12;line.bold;text:FFFFFF {
+  [Kafka Cluster] as Kafka #FFFFFF;line:FDBA74;text:1F2937
+}
+
+' Storage & Cache Layer
+database "State Storage Layer" as DataTier {
+  database "Redis Cache" as Redis
+  database "PostgreSQL DB" as Postgres
+}
+
+' --- Interactions ---
+
+' Trader Access
+Trader -[#16A34A]down-> Dashboard : 1. Access Streamlit UI (HTTPS :8501)
+Trader -[#16A34A]down-> Grafana : 2. View Performance Dashboards (HTTPS :3000)
+
+' Quant Dashboard Data Pulls
+Dashboard -[#7C3AED]right-> Redis : 3. Pull Live Cash & Positions (Redis RESP :6379)
+Dashboard -[#475569]right-> Postgres : 4. Query Order Audit History (JDBC :5432)
+Kafka -[#EA580C]up-> Dashboard : 5. Consume order-complete-events (Kafka :9092)
+
+' Grafana Querying Prometheus
+Grafana -[#16A34A]right-> Prom : 6. Query Time-Series Metrics (HTTP REST :9090)
+
+' Prometheus Scraping Targets
+Prom -[#2563EB]down-> CMAlpaca : 7. Scrape Python stats (HTTP GET :8000/metrics)
+Prom -[#2563EB]down-> TickLB : 8. Scrape Envoy circuit-breaker/pool stats (HTTP GET :9901/stats/prometheus)
+Prom -[#2563EB]down-> OPS : 9. Scrape JVM heap / gRPC latency (HTTP GET :8081/actuator/prometheus)
+Prom -[#2563EB]down-> OMS : 10. Scrape JVM heap / cron lag (HTTP GET :8082/actuator/prometheus)
+Prom -[#2563EB]down-> Postgres : 11. Scrape Database connections / locking stats (HTTP GET)
+Prom -[#2563EB]down-> Redis : 12. Scrape Redis keyspace / memory consumption (HTTP GET)
+Prom -[#2563EB]down-> Kafka : 13. Scrape JMX controller / consumer-lag stats (HTTP GET)
+
+@enduml
