@@ -146,12 +146,15 @@ if page == "Portfolio & Assets":
 
     with v_col2:
         st.subheader("Current Positions Summary")
-        df_pos = pd.DataFrame([
-            {"Ticker": t, "Quantity": q, "Value": q * mock_prices.get(t, 100.0)} for t, q in positions.items()
-        ])
-        fig_bar = px.bar(df_pos, x='Ticker', y='Value', text_auto='.2s', labels={'Value':'Total Value ($)'},
-                         color='Ticker', color_discrete_sequence=px.colors.qualitative.Set2)
-        st.plotly_chart(fig_bar, use_container_width=True)
+        if positions:
+            df_pos = pd.DataFrame([
+                {"Ticker": t, "Quantity": q, "Value": q * mock_prices.get(t, 100.0)} for t, q in positions.items()
+            ])
+            fig_bar = px.bar(df_pos, x='Ticker', y='Value', text_auto='.2s', labels={'Value':'Total Value ($)'},
+                             color='Ticker', color_discrete_sequence=px.colors.qualitative.Set2)
+            st.plotly_chart(fig_bar, use_container_width=True)
+        else:
+            st.info("No active positions found in the cache.")
 
 # --- Page 2: Order History ---
 elif page == "Order History":
