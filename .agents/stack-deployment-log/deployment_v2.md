@@ -19,8 +19,8 @@ Second deployment run of the `distributed-trading-system` microservices stack, u
 | **Order Processing** | `order-processing-service`| Order Management| **ACTIVE** | Yes (Success) | Compiled and started successfully. Subscribed to signal streams. |
 | **Order Management** | `order-management-service`| Order Management| **ACTIVE** | Yes (Success) | Database connection verified, scheduled cron running successfully. |
 | **Telemetry** | `prometheus` | Observability | **ACTIVE** | Yes (Success) | Reconfigured to host port 9091. Running successfully. |
-| **Visualization** | `grafana` | Observability | **ACTIVE** | Yes (Success) | Running successfully. Embedding and anonymous auth enabled. |
-| **Dashboard** | `quant-dashboard` | UI / Frontend | **ACTIVE** | Yes (Success) | Added separate System Control Center page. Dynamic Kafka health check running. Embedded Grafana iframe. |
+| **Visualization** | `grafana` | Observability | **ACTIVE** | Yes (Success) | Configured on network `gateway_net` for API Gateway routing. |
+| **Dashboard** | `quant-dashboard` | UI / Frontend | **ACTIVE** | Yes (Success) | Configured with subpath `/dashboard/` on network `gateway_net`. |
 
 ---
 
@@ -137,3 +137,11 @@ Second deployment run of the `distributed-trading-system` microservices stack, u
 * **Fix Applied**:
   1. Updated the `grafana` service in [`docker-compose.yml`](file:///c:/Users/jeshu/Projects/distributed-trading-system/docker-compose.yml#L198) to inject environment configurations: `GF_SECURITY_ALLOW_EMBEDDING=true`, `GF_AUTH_ANONYMOUS_ENABLED=true`, and `GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer`.
   2. Replaced the telemetry mock metrics logic in [`quant-dashboard/app.py`](file:///c:/Users/jeshu/Projects/distributed-trading-system/quant-dashboard/app.py#L366-L376) to call `st.components.v1.iframe(grafana_url)` targeting the user's mapped local Grafana interface (`http://localhost:3000`).
+
+### [2026-08-27T01:53:00+05:30] Hotfix 7: Spring Cloud API Gateway Subpath & Network Integration
+* **Issue**: Dashboard iframe was pointing to `http://localhost:3000`, requiring port forwarding from user endpoints and failing when exposed via the Spring Cloud API Gateway.
+* **Root Cause Analysis (RCA)**: To route both the dashboard and Grafana through the remote gateway without explicit external port exposures, they must join the same external `gateway_net` network and support base url subpaths `/dashboard` and `/grafana`.
+* **Fix Applied**:
+  1. Attached both `quant-dashboard` and `grafana` containers to the external `gateway_net` network in [`docker-compose.yml`](file:///c:/Users/jeshu/Projects/distributed-trading-system/docker-compose.yml#L179-L219).
+  2. Set `STREAMLIT_SERVER_BASE_URL_PATH=dashboard` in the environment block of `quant-dashboard` in `docker-compose.yml`.
+  3. Changed `grafana_url` inside [`quant-dashboard/app.py`](file:///c:/Users/jeshu/Projects/distributed-trading-system/quant-dashboard/app.py#L370) to use a relative subpath URL `"/grafana/"` so the browser resolves it relative to the gateway address automatically.

@@ -367,10 +367,9 @@ elif page == "System Telemetry":
     st.title("📊 System Telemetry (Grafana)")
     st.markdown("Real-time telemetry and pipeline performance dashboards loaded directly from Grafana.")
     
-    # We use st.components.v1.iframe to load the Grafana dashboard locally
-    # It requires port 3000 to be forwarded to your local machine
-    grafana_url = "http://localhost:3000"
+    # We use a relative path so it routes through the API Gateway automatically
+    grafana_url = "/grafana/"
     
-    st.info("💡 Ensure port 3000 is forwarded (e.g. `ssh -L 3000:localhost:3000 ...`) to access the live dashboard.")
+    st.info("💡 Exposing Grafana dynamically via the central API Gateway at `/grafana/`.")
     
     st.components.v1.iframe(grafana_url, height=800, scrolling=True)

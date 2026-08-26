@@ -175,6 +175,10 @@ services:
       - DB_USER=admin
       - DB_PASSWORD=admin
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - STREAMLIT_SERVER_BASE_URL_PATH=dashboard
+    networks:
+      - default
+      - gateway_net
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -200,12 +204,18 @@ services:
       - GF_SECURITY_ALLOW_EMBEDDING=true
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    networks:
+      - default
+      - gateway_net
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
 networks:
   default:
     name: kafka_net
+    external: true
+  gateway_net:
+    name: gateway_net
     external: true
 
 
