@@ -11,7 +11,7 @@ Second deployment run of the `distributed-trading-system` microservices stack, u
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Database** | `homeserver-pg` | Infrastructure | **ACTIVE** | Yes (Success) | PostgreSQL verified healthy and running. Mismatched user credentials identified & fixed. |
 | **Cache** | `homeserver-redis` | Infrastructure | **ACTIVE** | Yes (Success) | Redis verified healthy and running. |
-| **Message Broker** | `kafka` | Infrastructure | **ACTIVE** | Yes (Success) | Kafka verified healthy and running on `kafka_net`. |
+| **Message Broker** | `kafka` | Infrastructure | **ACTIVE** | Yes (Success) | Kafka verified healthy and running on `kafka_net`. Checked dynamically. |
 | **Gateway** | `connection-manager-alpaca`| Gateway | **ACTIVE** | Yes (Success) | Streaming live ticker data to gRPC consumers. |
 | **Load Balancer** | `tick-lb` | Gateway | **ACTIVE** | Yes (Success) | Envoy configured and routing gRPC data streams successfully. |
 | **Strategy AAPL** | `signal-gen-aapl` | Algorithmic | **ACTIVE** | Yes (Success) | Subscribed and processing AAPL tick stream. |
@@ -20,7 +20,7 @@ Second deployment run of the `distributed-trading-system` microservices stack, u
 | **Order Management** | `order-management-service`| Order Management| **ACTIVE** | Yes (Success) | Database connection verified, scheduled cron running successfully. |
 | **Telemetry** | `prometheus` | Observability | **ACTIVE** | Yes (Success) | Reconfigured to host port 9091. Running successfully. |
 | **Visualization** | `grafana` | Observability | **ACTIVE** | Yes (Success) | Running successfully. |
-| **Dashboard** | `quant-dashboard` | UI / Frontend | **ACTIVE** | Yes (Success) | Deployed last, running Streamlit web server. Fixed empty positions and DB query bugs. |
+| **Dashboard** | `quant-dashboard` | UI / Frontend | **ACTIVE** | Yes (Success) | Added separate System Control Center page. Dynamic Kafka health check running. |
 
 ---
 
@@ -111,3 +111,11 @@ Second deployment run of the `distributed-trading-system` microservices stack, u
 * **Issue**: The Order History page threw a database exception: `column "ticker" does not exist`.
 * **Root Cause Analysis (RCA)**: The dashboard SQL query select statement expected the column names `ticker`, `quantity`, and `timestamp` from `tracked_orders`. However, checking the database schema inside the PostgreSQL container via `psql -c "\d tracked_orders"` revealed the actual columns are `symbol`, `qty`, and `created_at`.
 * **Fix Applied**: Updated the SQL query statement to select columns using aliases mapping to the expected variable names: `SELECT order_id, symbol AS ticker, qty AS quantity, side, status, created_at AS timestamp, limit_price FROM tracked_orders ORDER BY created_at DESC LIMIT 100;`.
+
+### [2026-08-27T01:35:00+05:30] Hotfix 4: Sidebar Missing Kafka Status & Dedicated Control Center Page
+* **Issue**: The System Control Center section in the dashboard sidebar lacked an active status check for the Kafka message broker, and the user requested a separate dedicated page.
+* **Root Cause Analysis (RCA)**: Since the dashboard lacks a Kafka library wrapper, connectivity was not tracked. Furthermore, the widgets were cramped inside the sidebar.
+* **Fix Applied**:
+  1. Implemented a lightweight, socket-based connection check function `check_kafka_connection()` in `app.py` that queries `KAFKA_BOOTSTRAP_SERVERS` directly on port `9092` with a 2-second timeout (cached with a 10-second TTL to prevent overhead).
+  2. Added the status indicators in the sidebar for Redis, PostgreSQL, and Kafka.
+  3. Created a dedicated `"System Control Center"` page as the default homepage option, featuring status cards showing host details and online/offline indicators for all three infrastructure dependencies.

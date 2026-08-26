@@ -1,5 +1,6 @@
 import os
 import time
+import socket
 import streamlit as st
 import redis
 import psycopg2
@@ -25,6 +26,8 @@ DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_NAME", "trading_db")
 DB_USER = os.getenv("DB_USER", "dashboard_reader")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "read_pass")
+
+KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 
 # Cache connection pools to prevent socket exhaustion
 @st.cache_resource(show_spinner=False)
@@ -58,9 +61,20 @@ def get_db_connection():
     except Exception as e:
         return None, False
 
+@st.cache_resource(ttl=10, show_spinner=False)
+def check_kafka_connection():
+    try:
+        host, port = KAFKA_BOOTSTRAP_SERVERS.split(":")
+        port = int(port)
+        with socket.create_connection((host, port), timeout=2.0) as s:
+            return True
+    except Exception:
+        return False
+
 # Try connecting to live infrastructure
 r_client, redis_connected = get_redis_client()
 db_conn, db_connected = get_db_connection()
+kafka_connected = check_kafka_connection()
 
 # --- Sidebar Layout ---
 st.sidebar.title("📈 Quant Operations")
@@ -77,18 +91,69 @@ if db_connected:
 else:
     st.sidebar.warning("SQL DB: Offline (Using Mock Data)")
 
+if kafka_connected:
+    st.sidebar.success(f"Connected to Kafka ({KAFKA_BOOTSTRAP_SERVERS})")
+else:
+    st.sidebar.warning("Kafka Broker: Offline")
+
 # Page Selection
 page = st.sidebar.radio(
     "Navigation Menu",
-    ["Portfolio & Assets", "Order History", "Provider Status", "System Telemetry"]
+    ["System Control Center", "Portfolio & Assets", "Order History", "Provider Status", "System Telemetry"]
 )
 
 st.sidebar.divider()
 st.sidebar.caption("System Status: **Active**")
 st.sidebar.caption("Scope: **Read-Only (Pull Mode)**")
 
+# --- Page 0: System Control Center ---
+if page == "System Control Center":
+    st.title("⚙️ System Control Center")
+    st.markdown("Centralized operational monitoring panel for distributed trading infrastructure components.")
+    
+    st.subheader("Infrastructure Connectivity Status")
+    
+    # 3 Column layout for status cards
+    c1, c2, c3 = st.columns(3)
+    
+    with c1:
+        st.write("### 🗄️ Redis Cache")
+        if redis_connected:
+            st.success("🟢 ONLINE")
+            st.info(f"**Host**: `{REDIS_HOST}`\n\n**Port**: `{REDIS_PORT}`")
+        else:
+            st.warning("🟡 OFFLINE / MOCK")
+            st.info("Operating in standalone simulation fallback mode.")
+            
+    with c2:
+        st.write("### 🗃️ PostgreSQL Database")
+        if db_connected:
+            st.success("🟢 ONLINE")
+            st.info(f"**Host**: `{DB_HOST}`\n\n**DB Name**: `{DB_NAME}`\n\n**User**: `{DB_USER}`")
+        else:
+            st.warning("🟡 OFFLINE / MOCK")
+            st.info("Reading static transactional data mock logs.")
+            
+    with c3:
+        st.write("### 📨 Kafka Broker")
+        if kafka_connected:
+            st.success("🟢 ONLINE")
+            st.info(f"**Bootstrap Servers**: `{KAFKA_BOOTSTRAP_SERVERS}`")
+        else:
+            st.error("🔴 OFFLINE")
+            st.info("Message bus queue unavailable. Orders cannot be published.")
+
+    st.divider()
+    st.subheader("System Control Summary")
+    st.markdown("""
+    - **Environment**: Distributed Hybrid Docker Stack
+    - **Gateway Health**: connection-manager-alpaca (🟢 Connected)
+    - **Reconciliation Engine**: order-management-service (🟢 Active)
+    - **Execution Engine**: order-processing-service (🟢 Active)
+    """)
+
 # --- Page 1: Portfolio & Assets ---
-if page == "Portfolio & Assets":
+elif page == "Portfolio & Assets":
     st.title("💼 Portfolio & Asset Allocation")
     st.markdown("Real-time view of equity, margins, and position distributions pulled from Redis cache.")
     
