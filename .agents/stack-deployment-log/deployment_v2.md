@@ -19,8 +19,8 @@ Second deployment run of the `distributed-trading-system` microservices stack, u
 | **Order Processing** | `order-processing-service`| Order Management| **ACTIVE** | Yes (Success) | Compiled and started successfully. Subscribed to signal streams. |
 | **Order Management** | `order-management-service`| Order Management| **ACTIVE** | Yes (Success) | Database connection verified, scheduled cron running successfully. |
 | **Telemetry** | `prometheus` | Observability | **ACTIVE** | Yes (Success) | Reconfigured to host port 9091. Running successfully. |
-| **Visualization** | `grafana` | Observability | **ACTIVE** | Yes (Success) | Running successfully. |
-| **Dashboard** | `quant-dashboard` | UI / Frontend | **ACTIVE** | Yes (Success) | Added separate System Control Center page. Dynamic Kafka health check running. |
+| **Visualization** | `grafana` | Observability | **ACTIVE** | Yes (Success) | Running successfully. Embedding and anonymous auth enabled. |
+| **Dashboard** | `quant-dashboard` | UI / Frontend | **ACTIVE** | Yes (Success) | Added separate System Control Center page. Dynamic Kafka health check running. Embedded Grafana iframe. |
 
 ---
 
@@ -130,3 +130,10 @@ Second deployment run of the `distributed-trading-system` microservices stack, u
 * **Fix Applied**:
   1. Removed the subheader and Redis/DB/Kafka connection status alerts from the sidebar in [`quant-dashboard/app.py`](file:///c:/Users/jeshu/Projects/distributed-trading-system/quant-dashboard/app.py#L79-L98).
   2. Added `KAFKA_BOOTSTRAP_SERVERS=kafka:9092` to the environment block of the `quant-dashboard` service in [`docker-compose.yml`](file:///c:/Users/jeshu/Projects/distributed-trading-system/docker-compose.yml#L176).
+
+### [2026-08-27T01:42:00+05:30] Hotfix 6: Native Grafana UI Embedding (Iframe)
+* **Issue**: Telemetry page loaded static mock chart plots rather than the live operational dashboards.
+* **Root Cause Analysis (RCA)**: Embedding Grafana via standard iframe results in cross-origin blocks (Clickjacking guards) and user login prompts unless embedding and anonymous reader policies are configured.
+* **Fix Applied**:
+  1. Updated the `grafana` service in [`docker-compose.yml`](file:///c:/Users/jeshu/Projects/distributed-trading-system/docker-compose.yml#L198) to inject environment configurations: `GF_SECURITY_ALLOW_EMBEDDING=true`, `GF_AUTH_ANONYMOUS_ENABLED=true`, and `GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer`.
+  2. Replaced the telemetry mock metrics logic in [`quant-dashboard/app.py`](file:///c:/Users/jeshu/Projects/distributed-trading-system/quant-dashboard/app.py#L366-L376) to call `st.components.v1.iframe(grafana_url)` targeting the user's mapped local Grafana interface (`http://localhost:3000`).

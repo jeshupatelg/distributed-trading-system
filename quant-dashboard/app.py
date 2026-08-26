@@ -364,37 +364,13 @@ elif page == "Provider Status":
 
 # --- Page 4: System Telemetry ---
 elif page == "System Telemetry":
-    st.title("📊 Observability Stack (Installation Preview)")
-    st.markdown("System metrics telemetry is managed out-of-band by a dedicated **Prometheus** and **Grafana** stack.")
-
-    st.markdown("""
-    The observability stack is deployed to scrape performance details from services, databases, and load balancers. 
-    Metrics collected include:
-    - **JVM & Memory Footprints**: CPU, GC times, and Heap utilization inside `order-processing-service` and `order-management-service` via Micrometer.
-    - **Network Latencies**: Request rates and RPC roundtrip times on `tick-lb` (Envoy) and connection gateways.
-    - **Kafka Consumer Lag**: Lag statistics for topics (`trading-signals`, `raw-order-updates`).
-    """)
-
-    # Interactive placeholder layout
-    st.divider()
-    st.subheader("Grafana Dashboard Embed Placeholder")
+    st.title("📊 System Telemetry (Grafana)")
+    st.markdown("Real-time telemetry and pipeline performance dashboards loaded directly from Grafana.")
     
-    st.info("ℹ️ Once Grafana panels are fully populated, they will be embedded directly in the panel below.")
+    # We use st.components.v1.iframe to load the Grafana dashboard locally
+    # It requires port 3000 to be forwarded to your local machine
+    grafana_url = "http://localhost:3000"
     
-    # Render a mock chart showing a CPU performance indicator using Plotly
-    t_vals = [time.time() - (60 - i) for i in range(60)]
-    cpu_vals = [25.4, 28.1, 22.9, 31.4, 38.0, 35.2, 28.9, 29.5, 30.1, 26.2, 45.4, 49.8] * 5
-    cpu_vals = cpu_vals[:60]
+    st.info("💡 Ensure port 3000 is forwarded (e.g. `ssh -L 3000:localhost:3000 ...`) to access the live dashboard.")
     
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=t_vals, y=cpu_vals, mode='lines+markers', name='Global System CPU (%)',
-                             line=dict(color='#EA580C', width=2)))
-    fig.update_layout(
-        title="Active Telemetry Feed Scrape (Simulated System CPU %)",
-        xaxis_title="Time",
-        yaxis_title="CPU Utilization %",
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(color='#94A3B8')
-    )
-    st.plotly_chart(fig, use_container_width=True)
+    st.components.v1.iframe(grafana_url, height=800, scrolling=True)
