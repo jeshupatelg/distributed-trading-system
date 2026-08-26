@@ -78,24 +78,6 @@ kafka_connected = check_kafka_connection()
 
 # --- Sidebar Layout ---
 st.sidebar.title("📈 Quant Operations")
-st.sidebar.subheader("System Control Center")
-
-# Connection status widgets
-if redis_connected:
-    st.sidebar.success(f"Connected to Redis ({REDIS_HOST})")
-else:
-    st.sidebar.warning("Redis: Offline (Using Mock Data)")
-
-if db_connected:
-    st.sidebar.success("Database: Connected")
-else:
-    st.sidebar.warning("SQL DB: Offline (Using Mock Data)")
-
-if kafka_connected:
-    st.sidebar.success(f"Connected to Kafka ({KAFKA_BOOTSTRAP_SERVERS})")
-else:
-    st.sidebar.warning("Kafka Broker: Offline")
-
 # Page Selection
 page = st.sidebar.radio(
     "Navigation Menu",

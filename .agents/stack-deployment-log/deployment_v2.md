@@ -119,3 +119,14 @@ Second deployment run of the `distributed-trading-system` microservices stack, u
   1. Implemented a lightweight, socket-based connection check function `check_kafka_connection()` in `app.py` that queries `KAFKA_BOOTSTRAP_SERVERS` directly on port `9092` with a 2-second timeout (cached with a 10-second TTL to prevent overhead).
   2. Added the status indicators in the sidebar for Redis, PostgreSQL, and Kafka.
   3. Created a dedicated `"System Control Center"` page as the default homepage option, featuring status cards showing host details and online/offline indicators for all three infrastructure dependencies.
+
+### [2026-08-27T01:38:00+05:30] Hotfix 5: Sidebar Status Cleanup & Kafka Offline Status Fix
+* **Issue**:
+  1. Sidebar connection indicators were redundant now that the dedicated Control Center page was in place.
+  2. The Kafka Broker showed as offline on the Control Center page.
+* **Root Cause Analysis (RCA)**:
+  1. Status widgets occupied significant sidebar space and were redundant.
+  2. The dashboard container lacked the `KAFKA_BOOTSTRAP_SERVERS` environment variable, falling back to `localhost:9092` which inside the container could not resolve the Kafka broker.
+* **Fix Applied**:
+  1. Removed the subheader and Redis/DB/Kafka connection status alerts from the sidebar in [`quant-dashboard/app.py`](file:///c:/Users/jeshu/Projects/distributed-trading-system/quant-dashboard/app.py#L79-L98).
+  2. Added `KAFKA_BOOTSTRAP_SERVERS=kafka:9092` to the environment block of the `quant-dashboard` service in [`docker-compose.yml`](file:///c:/Users/jeshu/Projects/distributed-trading-system/docker-compose.yml#L176).
