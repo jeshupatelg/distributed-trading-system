@@ -33,6 +33,12 @@ class MeanReversionStrategy(BaseStrategy):
             
         z_score = (close - mean) / std_dev
         
+        try:
+            import telemetry
+            telemetry.INDICATOR_VALUE.labels(ticker=symbol, indicator_name="z_score").set(z_score)
+        except ImportError:
+            pass
+            
         signal = None
         # Oversold - trigger buy if z-score is below negative threshold and we are not long
         if z_score < -self.threshold and self.position <= 0:

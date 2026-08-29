@@ -145,3 +145,11 @@ Second deployment run of the `distributed-trading-system` microservices stack, u
   1. Attached both `quant-dashboard` and `grafana` containers to the external `gateway_net` network in [`docker-compose.yml`](file:///c:/Users/jeshu/Projects/distributed-trading-system/docker-compose.yml#L179-L219).
   2. Set `STREAMLIT_SERVER_BASE_URL_PATH=dashboard` in the environment block of `quant-dashboard` in `docker-compose.yml`.
   3. Changed `grafana_url` inside [`quant-dashboard/app.py`](file:///c:/Users/jeshu/Projects/distributed-trading-system/quant-dashboard/app.py#L370) to use a relative subpath URL `"/grafana/"` so the browser resolves it relative to the gateway address automatically.
+
+### [2026-08-30T03:07:00+05:30] Hotfix 8: Grafana Subpath Routing Mismatch
+* **Issue**: Accessing Grafana through the gateway subpath `/grafana` returned the error `If you're seeing this Grafana has failed to load its application files`.
+* **Root Cause Analysis (RCA)**: Grafana was not configured to serve from a subpath or run with the `/grafana/` root URL inside its docker container environment. Consequently, it expected traffic on the root path `/` and generated absolute asset links, leading to Javascript loading failures in the client's browser.
+* **Fix Applied**:
+  1. Configured the Grafana service in [`docker-compose.yml`](file:///c:/Users/jeshu/Projects/distributed-trading-system/docker-compose.yml) to serve from the subpath by injecting variables `GF_SERVER_ROOT_URL=/grafana/` and `GF_SERVER_SERVE_FROM_SUB_PATH=true`.
+  2. Synced the configuration and redeployed the Docker Compose stack.
+

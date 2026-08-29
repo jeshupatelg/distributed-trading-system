@@ -14,7 +14,7 @@ services:
       application: "distributed-trading"
       prometheus.scrape: "true"
       prometheus.port: "8000"
-      prometheus.path: "/metrics"
+      prometheus.path: "/metrics/"
     volumes:
       # Mount shared proto schema as a read-only volume
       - ./config/grpc-proto-schema:/opt/schemas:ro
@@ -66,7 +66,7 @@ services:
       application: "distributed-trading"
       prometheus.scrape: "true"
       prometheus.port: "8000"
-      prometheus.path: "/metrics"
+      prometheus.path: "/metrics/"
     volumes:
       - ./config/strategies/sma_crossover.py:/app/strategies/sma_crossover.py:ro
     environment:
@@ -100,7 +100,7 @@ services:
       application: "distributed-trading"
       prometheus.scrape: "true"
       prometheus.port: "8000"
-      prometheus.path: "/metrics"
+      prometheus.path: "/metrics/"
     volumes:
       - ./config/strategies/mean_reversion.py:/app/strategies/mean_reversion.py:ro
     environment:
@@ -236,11 +236,69 @@ services:
       - GF_SECURITY_ALLOW_EMBEDDING=true
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_INSTALL_PLUGINS=redis-datasource,hamedkarbasi93-kafka-datasource
+      - GF_SERVER_ROOT_URL=/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+    volumes:
+      - ./config/observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./config/observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./config/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
     networks:
       - default
       - gateway_net
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  # PostgreSQL Prometheus Exporter
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: postgres-exporter
+    environment:
+      - DATA_SOURCE_NAME=postgresql://admin:admin@host.docker.internal:5432/trading_agent?sslmode=disable
+    ports:
+      - "9187:9187"
+    labels:
+      application: "distributed-trading"
+      prometheus.scrape: "true"
+      prometheus.port: "9187"
+      prometheus.path: "/metrics"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+
+  # Redis Prometheus Exporter
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: redis-exporter
+    environment:
+      - REDIS_ADDR=redis://host.docker.internal:6379
+    ports:
+      - "9121:9121"
+    labels:
+      application: "distributed-trading"
+      prometheus.scrape: "true"
+      prometheus.port: "9121"
+      prometheus.path: "/metrics"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+
+  # Kafka Prometheus Exporter
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:latest
+    container_name: kafka-exporter
+    command: --kafka.server=kafka:9092
+    ports:
+      - "9308:9308"
+    labels:
+      application: "distributed-trading"
+      prometheus.scrape: "true"
+      prometheus.port: "9308"
+      prometheus.path: "/metrics"
+    networks:
+      - default
 
 networks:
   default:

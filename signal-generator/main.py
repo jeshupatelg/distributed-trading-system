@@ -7,6 +7,7 @@ from fastapi import FastAPI
 import uvicorn
 import grpc
 import config
+import telemetry
 from base_strategy import BaseStrategy
 from kafka_publisher import KafkaSignalPublisher
 
@@ -49,8 +50,14 @@ def load_strategy() -> BaseStrategy:
     logger.info("Strategy loaded and initialized successfully.")
     return strategy_instance
 
+from prometheus_client import make_asgi_app
+
 # FastAPI Setup for Probes
 app = FastAPI()
+
+# Mount Prometheus metrics endpoint
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
 
 @app.get("/health")
 async def health_check():
@@ -128,8 +135,18 @@ async def consume_market_data(strategy: BaseStrategy, publisher: KafkaSignalPubl
                     
                     try:
                         # Process tick with pluggable strategy
+                        import time
+                        import telemetry
+                        
+                        start_time = time.perf_counter()
                         signal = strategy.on_bar(bar_dict)
+                        duration = time.perf_counter() - start_time
+                        
+                        telemetry.BARS_PROCESSED.labels(ticker=config.TICKER).inc()
+                        telemetry.STRATEGY_LATENCY.labels(ticker=config.TICKER).observe(duration)
+                        
                         if signal:
+                            telemetry.SIGNALS_GENERATED.labels(ticker=config.TICKER, action=signal["action"]).inc()
                             await publisher.publish_signal(signal)
                     except Exception as ex:
                         logger.error(f"Error running strategy on_bar: {ex}", exc_info=True)

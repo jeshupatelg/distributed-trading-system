@@ -186,6 +186,8 @@ class AlpacaStreamClient:
             bar (Bar): Raw bar object from StockDataStream.
         """
         logger.debug("Live bar received: %s", bar)
+        import telemetry
+        telemetry.TICKS_BROADCASTED.labels(ticker=bar.symbol).inc()
         if self.grpc_broadcaster:
             await self.grpc_broadcaster.broadcast_bar(bar)
 
@@ -201,6 +203,8 @@ class AlpacaStreamClient:
             trade_update.event,
             trade_update.order.id,
         )
+        import telemetry
+        telemetry.TRADE_UPDATES_PUBLISHED.labels(event=trade_update.event).inc()
         if hasattr(trade_update, "model_dump"):
             data = trade_update.model_dump()
         else:

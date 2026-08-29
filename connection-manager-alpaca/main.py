@@ -11,6 +11,7 @@ from fastapi import FastAPI
 import uvicorn
 
 import config
+import telemetry
 from kafka_publisher import KafkaEventPublisher
 from alpaca_client import AlpacaRestClient, AlpacaStreamClient
 from grpc_server import gRPCStreamBroadcaster, start_grpc_server
@@ -88,6 +89,8 @@ async def lifespan(app: FastAPI):
     await stop_services()
 
 
+from prometheus_client import make_asgi_app
+
 # Initialize FastAPI app with lifespan manager
 app = FastAPI(
     title="connection-manager-alpaca",
@@ -95,6 +98,10 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# Mount Prometheus metrics endpoint
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
 
 
 @app.get("/health")

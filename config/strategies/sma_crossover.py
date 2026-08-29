@@ -28,6 +28,13 @@ class SmaCrossoverStrategy(BaseStrategy):
         fast_ma = sum(fast_prices) / len(fast_prices)
         slow_ma = sum(self.prices) / len(self.prices)
         
+        try:
+            import telemetry
+            telemetry.INDICATOR_VALUE.labels(ticker=symbol, indicator_name="fast_ma").set(fast_ma)
+            telemetry.INDICATOR_VALUE.labels(ticker=symbol, indicator_name="slow_ma").set(slow_ma)
+        except ImportError:
+            pass
+        
         signal = None
         if self.last_fast_ma is not None and self.last_slow_ma is not None:
             # Check for crossover
