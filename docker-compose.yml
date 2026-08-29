@@ -10,6 +10,11 @@ services:
     ports:
       - "8000:8000"    # FastAPI HTTP REST Port
       - "50051:50051"  # gRPC Service Port
+    labels:
+      application: "distributed-trading"
+      prometheus.scrape: "true"
+      prometheus.port: "8000"
+      prometheus.path: "/metrics"
     volumes:
       # Mount shared proto schema as a read-only volume
       - ./config/grpc-proto-schema:/opt/schemas:ro
@@ -39,6 +44,11 @@ services:
     ports:
       - "50052:50051"  # Expose Envoy gRPC listener on host port 50052 to avoid conflict with connection-manager
       - "9901:9901"    # Envoy Administration Port
+    labels:
+      application: "distributed-trading"
+      prometheus.scrape: "true"
+      prometheus.port: "9901"
+      prometheus.path: "/stats/prometheus"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -52,6 +62,11 @@ services:
     container_name: signal-gen-aapl
     ports:
       - "8001:8000"    # Expose REST health check on host 8001 (gRPC port 50051 is client-only and not exposed)
+    labels:
+      application: "distributed-trading"
+      prometheus.scrape: "true"
+      prometheus.port: "8000"
+      prometheus.path: "/metrics"
     volumes:
       - ./config/strategies/sma_crossover.py:/app/strategies/sma_crossover.py:ro
     environment:
@@ -81,6 +96,11 @@ services:
     container_name: signal-gen-msft
     ports:
       - "8002:8000"    # Expose REST health check on host 8002
+    labels:
+      application: "distributed-trading"
+      prometheus.scrape: "true"
+      prometheus.port: "8000"
+      prometheus.path: "/metrics"
     volumes:
       - ./config/strategies/mean_reversion.py:/app/strategies/mean_reversion.py:ro
     environment:
@@ -116,6 +136,11 @@ services:
     container_name: order-processing-service
     ports:
       - "8081:8081"
+    labels:
+      application: "distributed-trading"
+      prometheus.scrape: "true"
+      prometheus.port: "8081"
+      prometheus.path: "/actuator/prometheus"
     environment:
       - REDIS_HOST=host.docker.internal
       - REDIS_PORT=6379
@@ -137,6 +162,11 @@ services:
     container_name: order-management-service
     ports:
       - "8082:8082"
+    labels:
+      application: "distributed-trading"
+      prometheus.scrape: "true"
+      prometheus.port: "8082"
+      prometheus.path: "/actuator/prometheus"
     environment:
       - REDIS_HOST=host.docker.internal
       - REDIS_PORT=6379
@@ -186,10 +216,12 @@ services:
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
+    user: root
     ports:
       - "9091:9090"
     volumes:
       - ./config/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
