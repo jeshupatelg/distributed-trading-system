@@ -1,22 +1,34 @@
 # Deployment Log - v2
 
-## Deployment Action: Fix Order Processing & Management Kafka Consumers
+## Deployment Action 1: Fix Order Processing & Management Kafka Consumers
+- **Problem**: Strategy generator instances successfully generated and published trading signals to the Kafka topic `trading-signals`. However, zero orders were placed or displayed on the UI dashboard.
+- **Root Cause**: Missing `@EnableKafka` annotation in `SharedAppConfig.java` caused Spring to ignore `@KafkaListener` annotations.
+- **Fix**: Added `@EnableKafka` to `SharedAppConfig.java`, `OrderProcessingApplication.java`, and `OrderManagementApplication.java`.
 
-### 1. Root Cause Analysis (RCA)
-- **Problem**: Strategy generator instances (such as `signal-gen-aapl`) successfully generated and published trading signals to the Kafka topic `trading-signals`. However, zero orders were placed or displayed on the UI dashboard (`tracked_orders` SQL table remained empty).
-- **Underlying Cause**:
-  - The Spring Boot microservices `order-processing-service` (OPS) and `order-management-service` (OMS) declare `@KafkaListener` annotations on `SignalConsumer`, `OrderCreateConsumer`, and `OrderUpdateConsumer`.
-  - In `CombinedOrderingSystem/libs/shared-models/src/main/java/com/trading/shared/config/SharedAppConfig.java`, custom Kafka infrastructure beans were defined under `@Configuration` without the `@EnableKafka` annotation.
-  - Because `spring-boot-starter-kafka` autoconfiguration was not present and `@EnableKafka` was omitted, Spring never registered `KafkaListenerAnnotationBeanPostProcessor`.
-  - As a result, neither service initiated a Kafka listener container for `trading-signals`, `order-create-events`, or `raw-order-updates`, leaving consumer groups (`ops-group`, `oms-group`) completely inactive.
-
-### 2. Specific Fix Applied
-- Added `@EnableKafka` to `SharedAppConfig.java` in `com.trading.shared.config`.
-- Added `@EnableKafka` directly to `OrderProcessingApplication.java` and `OrderManagementApplication.java`.
-- Synchronized code changes to the remote docker host environment and redeployed the `distributed-trading-system` compose stack.
-
-### 3. Verification & Results
-- Verified Kafka consumer groups (`ops-group` and `oms-group`) active and listening.
-- Verified signal consumption from `trading-signals` topic.
-- Verified order placement through broker gateway and persistence into PostgreSQL `tracked_orders` table.
-- Verified orders populated and visible on the UI dashboard.
+## Deployment Action 2: Phase 1 Pre-Trade Risk Engine & Global Emergency Kill Switch
+- **Objective**: Implement comprehensive pre-trade risk controls, loss gates, price collars, rate throttling, max sizing/concentration, on-exchange hard stop loss attachment, and a global emergency kill switch with full GUI interactivity and Indian exchange/broker compatibility.
+- **Key Modules Modified & Added**:
+  1. **Proto Schema (connection_manager.proto)**:
+     - Updated `OrderRequest` with `stop_loss_price`, `take_profit_price`, and `product_type` (supporting Indian CNC/MIS/NRML and Global DAY).
+     - Added `CancelAllOrders` and `CloseAllPositions` RPCs to `OrderExecutionService`.
+  2. **Broker Gateway (connection-manager-alpaca)**:
+     - Updated `submit_order` in `alpaca_client.py` to submit native bracket orders with on-exchange hard stop loss.
+     - Added `cancel_all_orders` and `close_all_positions` methods.
+     - Updated `grpc_server.py` with `CancelAllOrders` and `CloseAllPositions` servicer handlers.
+  3. **Order Processing Service (order-processing-service)**:
+     - Upgraded `RiskManager.java` to evaluate 6 pre-trade risk gates:
+       1. Global Emergency Kill Switch Gate (`system:kill_switch`).
+       2. Daily Loss Gate (evaluating real-time cumulative drawdown vs `risk:config:max_daily_loss`).
+       3. Fat-Finger & Price Collar Gate (rejecting prices deviating > 1.5% from market tick).
+       4. Velocity Rate Throttler (max 5 orders/sec per symbol; max 30 orders/min system-wide).
+       5. Max Position Sizing & Concentration Gate (max 500 qty, max ,000 value, max 20% equity concentration).
+       6. Cash Margin Verification & Reservation.
+       7. Automatic dynamic stop loss price calculation.
+     - Updated `SignalConsumer.java` to pass stop loss prices to the broker and handle pre-trade rejections.
+     - Added `OrderExecutionClient.java` emergency methods.
+     - Added `RiskAdminController.java` REST API for kill-switch and dynamic configuration.
+  4. **Quant Dashboard (quant-dashboard)**:
+     - Added new **"Risk Engine & Controls"** page.
+     - Added interactive form to modify all risk limits in real-time (persisting directly to Redis).
+     - Added 1-click **Emergency Global Kill Switch** and **Reset Lockdown** controls.
+     - Added currency toggle (₹ INR / $ USD) and Indian broker/exchange compatibility indicators.

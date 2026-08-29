@@ -111,7 +111,7 @@ class KafkaEventPublisher:
             self.loop = asyncio.get_running_loop()
 
         try:
-            payload = json.dumps(order_update_dict).encode("utf-8")
+            payload = json.dumps(order_update_dict, default=str).encode("utf-8")
             # Queue production asynchronously
             await self.loop.run_in_executor(
                 self.executor,

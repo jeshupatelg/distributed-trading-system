@@ -1,6 +1,9 @@
 import os
 import time
 import socket
+import json
+import urllib.request
+import urllib.error
 import streamlit as st
 import redis
 import psycopg2
@@ -8,10 +11,10 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-# Set page configuration with a modern dark theme style (configured in Streamlit settings)
+# Set page configuration with a modern dark theme style
 st.set_page_config(
-    page_title="Quant Operations Dashboard",
-    page_icon="📈",
+    page_title="Quant Operations & Risk Center",
+    page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -28,6 +31,7 @@ DB_USER = os.getenv("DB_USER", "dashboard_reader")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "read_pass")
 
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+OPS_REST_ENDPOINT = os.getenv("OPS_REST_ENDPOINT", "http://order-processing-service:8081")
 
 # Cache connection pools to prevent socket exhaustion
 @st.cache_resource(show_spinner=False)
@@ -40,10 +44,9 @@ def get_redis_client():
             socket_timeout=2.0,
             decode_responses=True
         )
-        # Test connection
         r.ping()
         return r, True
-    except Exception as e:
+    except Exception:
         return None, False
 
 @st.cache_resource(show_spinner=False)
@@ -58,7 +61,7 @@ def get_db_connection():
             connect_timeout=2
         )
         return conn, True
-    except Exception as e:
+    except Exception:
         return None, False
 
 @st.cache_resource(ttl=10, show_spinner=False)
@@ -77,32 +80,60 @@ db_conn, db_connected = get_db_connection()
 kafka_connected = check_kafka_connection()
 
 # --- Sidebar Layout ---
-st.sidebar.title("📈 Quant Operations")
+st.sidebar.title("🛡️ Quant Operations & Risk")
+
+# Currency selector (Indian / Global compatibility)
+currency = st.sidebar.selectbox("Base Currency / Exchange", ["₹ INR (NSE/BSE)", "$ USD (US Markets)"])
+curr_sym = "₹" if "INR" in currency else "$"
+
+# Query Kill Switch Status from Redis
+kill_switch_active = False
+if redis_connected:
+    try:
+        ks_val = r_client.get("system:kill_switch")
+        kill_switch_active = (ks_val == "true")
+    except Exception:
+        pass
+
+# Global Status Banner in Sidebar
+if kill_switch_active:
+    st.sidebar.error("🔴 **EMERGENCY LOCKDOWN**\n\nKill switch active. Trading halted.")
+else:
+    st.sidebar.success("🟢 **SYSTEM NORMAL**\n\nTrading pipeline active.")
+
 # Page Selection
 page = st.sidebar.radio(
     "Navigation Menu",
-    ["System Control Center", "Portfolio & Assets", "Order History", "Provider Status", "System Telemetry"]
+    [
+        "System Control Center",
+        "Risk Engine & Controls",
+        "Portfolio & Assets",
+        "Order History",
+        "Provider Status",
+        "System Telemetry"
+    ]
 )
 
 st.sidebar.divider()
-st.sidebar.caption("System Status: **Active**")
-st.sidebar.caption("Scope: **Read-Only (Pull Mode)**")
+st.sidebar.caption("System Architecture: **Distributed Microservices**")
+st.sidebar.caption("Mode: **Production Phase 1 Protected**")
 
-# --- Page 0: System Control Center ---
+
+# =====================================================================
+# Page 0: System Control Center
+# =====================================================================
 if page == "System Control Center":
     st.title("⚙️ System Control Center")
-    st.markdown("Centralized operational monitoring panel for distributed trading infrastructure components.")
-    
+    st.markdown("Centralized operational monitoring and infrastructure connectivity health.")
+
     st.subheader("Infrastructure Connectivity Status")
-    
-    # 3 Column layout for status cards
     c1, c2, c3 = st.columns(3)
     
     with c1:
         st.write("### 🗄️ Redis Cache")
         if redis_connected:
             st.success("🟢 ONLINE")
-            st.info(f"**Host**: `{REDIS_HOST}`\n\n**Port**: `{REDIS_PORT}`")
+            st.info(f"**Host**: {REDIS_HOST}\n\n**Port**: {REDIS_PORT}")
         else:
             st.warning("🟡 OFFLINE / MOCK")
             st.info("Operating in standalone simulation fallback mode.")
@@ -111,7 +142,7 @@ if page == "System Control Center":
         st.write("### 🗃️ PostgreSQL Database")
         if db_connected:
             st.success("🟢 ONLINE")
-            st.info(f"**Host**: `{DB_HOST}`\n\n**DB Name**: `{DB_NAME}`\n\n**User**: `{DB_USER}`")
+            st.info(f"**Host**: {DB_HOST}\n\n**DB Name**: {DB_NAME}\n\n**User**: {DB_USER}")
         else:
             st.warning("🟡 OFFLINE / MOCK")
             st.info("Reading static transactional data mock logs.")
@@ -120,71 +151,267 @@ if page == "System Control Center":
         st.write("### 📨 Kafka Broker")
         if kafka_connected:
             st.success("🟢 ONLINE")
-            st.info(f"**Bootstrap Servers**: `{KAFKA_BOOTSTRAP_SERVERS}`")
+            st.info(f"**Bootstrap Servers**: {KAFKA_BOOTSTRAP_SERVERS}")
         else:
             st.error("🔴 OFFLINE")
-            st.info("Message bus queue unavailable. Orders cannot be published.")
+            st.info("Message bus queue unavailable.")
 
     st.divider()
-    st.subheader("System Control Summary")
-    st.markdown("""
-    - **Environment**: Distributed Hybrid Docker Stack
-    - **Gateway Health**: connection-manager-alpaca (🟢 Connected)
-    - **Reconciliation Engine**: order-management-service (🟢 Active)
-    - **Execution Engine**: order-processing-service (🟢 Active)
-    """)
+    st.subheader("Risk & Safety Gate Summary (Phase 1 Active)")
+    
+    r_col1, r_col2, r_col3 = st.columns(3)
+    with r_col1:
+        st.metric("Global Kill Switch", "ARMED / ACTIVE" if kill_switch_active else "NORMAL OPERATION")
+    with r_col2:
+        daily_loss_cfg = float(r_client.get("risk:config:max_daily_loss") or 2000.0) if redis_connected else 2000.0
+        st.metric("Max Daily Loss Limit", f"{curr_sym}{daily_loss_cfg:,.2f}")
+    with r_col3:
+        collar_cfg = float(r_client.get("risk:config:price_collar_pct") or 1.5) if redis_connected else 1.5
+        st.metric("Price Collar Band", f"±{collar_cfg}%")
 
-# --- Page 1: Portfolio & Assets ---
+
+# =====================================================================
+# Page 1: Risk Engine & Controls (Interactive GUI Configuration)
+# =====================================================================
+elif page == "Risk Engine & Controls":
+    st.title("🛡️ Pre-Trade Risk Engine & Safety Controls")
+    st.markdown("Real-time telemetry, emergency controls, and dynamic parameter configuration for pre-trade risk gates.")
+
+    # 1. Emergency Controls Section
+    st.subheader("🚨 Emergency Global Kill Switch")
+    ks_col1, ks_col2 = st.columns([2, 1])
+
+    with ks_col1:
+        if kill_switch_active:
+            st.error("⚠️ **EMERGENCY LOCKDOWN IS CURRENTLY ACTIVE!** All incoming signals are being rejected before order placement.")
+        else:
+            st.success("✅ **SYSTEM IS ACTIVE AND OPERATIONAL.** Pre-trade firewalls are actively scanning all trades.")
+
+    with ks_col2:
+        if not kill_switch_active:
+            if st.button("🚨 TRIGGER EMERGENCY KILL SWITCH", type="primary", use_container_width=True):
+                if redis_connected:
+                    r_client.set("system:kill_switch", "true")
+                    # Send API trigger to OPS
+                    try:
+                        req = urllib.request.Request(f"{OPS_REST_ENDPOINT}/api/v1/risk/kill-switch/trigger", method="POST")
+                        urllib.request.urlopen(req, timeout=3)
+                    except Exception:
+                        pass
+                    st.rerun()
+        else:
+            if st.button("🔄 RESET EMERGENCY LOCKDOWN", type="secondary", use_container_width=True):
+                if redis_connected:
+                    r_client.set("system:kill_switch", "false")
+                    try:
+                        req = urllib.request.Request(f"{OPS_REST_ENDPOINT}/api/v1/risk/kill-switch/reset", method="POST")
+                        urllib.request.urlopen(req, timeout=3)
+                    except Exception:
+                        pass
+                    st.rerun()
+
+    st.divider()
+
+    # 2. Live Risk Metrics & Drawdown Monitor
+    st.subheader("📊 Real-Time Pre-Trade Firewall Telemetry")
+    
+    # Read live balances & drawdown
+    cash = float(r_client.get("balance:cash") or 100000.0) if redis_connected else 100000.0
+    start_equity = float(r_client.get("balance:starting_equity") or 100000.0) if redis_connected else 100000.0
+    blocked_margin = float(r_client.get("balance:blocked") or 0.0) if redis_connected else 0.0
+    max_daily_loss = float(r_client.get("risk:config:max_daily_loss") or 2000.0) if redis_connected else 2000.0
+    
+    # Open positions
+    pos_keys = r_client.keys("positions:*") if redis_connected else []
+    positions_val = 0.0
+    for pk in pos_keys:
+        sym = pk.split(":")[-1]
+        qty = float(r_client.get(pk) or 0.0)
+        last_px = float(r_client.get(f"market:last_price:{sym}") or 100.0)
+        positions_val += (qty * last_px)
+        
+    total_equity = cash + positions_val
+    current_drawdown = max(0.0, start_equity - total_equity)
+    drawdown_pct = (current_drawdown / max_daily_loss * 100.0) if max_daily_loss > 0 else 0.0
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Current Portfolio Equity", f"{curr_sym}{total_equity:,.2f}")
+    m2.metric("Starting Day Equity", f"{curr_sym}{start_equity:,.2f}")
+    m3.metric("Current Daily Drawdown", f"{curr_sym}{current_drawdown:,.2f}", delta=f"-{drawdown_pct:.1f}% of limit", delta_color="inverse")
+    m4.metric("Max Allowed Daily Loss", f"{curr_sym}{max_daily_loss:,.2f}")
+
+    # Drawdown progress bar
+    st.write(f"**Daily Loss Gate Threshold Utilization**: {current_drawdown:,.2f} / {max_daily_loss:,.2f} {curr_sym}")
+    progress_val = min(1.0, current_drawdown / max_daily_loss if max_daily_loss > 0 else 0.0)
+    st.progress(progress_val)
+
+    st.divider()
+
+    # 3. Interactive Risk Threshold Configuration
+    st.subheader("⚙️ Modifiable Pre-Trade Risk Limits (Persisted to Redis)")
+    st.markdown("Adjust limits dynamically. Modifications take effect **immediately** across all worker threads without service restarts.")
+
+    # Load current configs from Redis or defaults
+    curr_daily_loss = float(r_client.get("risk:config:max_daily_loss") or 2000.0) if redis_connected else 2000.0
+    curr_collar_pct = float(r_client.get("risk:config:price_collar_pct") or 1.5) if redis_connected else 1.5
+    curr_vel_sec = int(r_client.get("risk:config:velocity_per_sec") or 5) if redis_connected else 5
+    curr_vel_min = int(r_client.get("risk:config:velocity_per_min") or 30) if redis_connected else 30
+    curr_max_qty = int(r_client.get("risk:config:max_order_qty") or 500) if redis_connected else 500
+    curr_max_val = float(r_client.get("risk:config:max_order_val") or 25000.0) if redis_connected else 25000.0
+    curr_max_conc = float(r_client.get("risk:config:max_concentration_pct") or 20.0) if redis_connected else 20.0
+    curr_stop_loss = float(r_client.get("risk:config:stop_loss_pct") or 2.0) if redis_connected else 2.0
+
+    with st.form("risk_config_form"):
+        col_a, col_b = st.columns(2)
+        
+        with col_a:
+            st.write("#### 🛡️ Loss & Sizing Protection")
+            new_daily_loss = st.number_input(
+                f"Max Daily Drawdown Gate ({curr_sym})",
+                min_value=100.0,
+                max_value=100000.0,
+                value=curr_daily_loss,
+                step=100.0,
+                help="Maximum allowable portfolio loss in a single trading session before trading halts automatically."
+            )
+            new_max_qty = st.number_input(
+                "Max Quantity Per Order (Shares/Lots)",
+                min_value=1,
+                max_value=10000,
+                value=curr_max_qty,
+                step=10,
+                help="Fat-finger protection: rejects individual orders requesting more than this size."
+            )
+            new_max_val = st.number_input(
+                f"Max Order Value ({curr_sym})",
+                min_value=100.0,
+                max_value=500000.0,
+                value=curr_max_val,
+                step=500.0,
+                help="Single-order total rupee/dollar value ceiling."
+            )
+            new_max_conc = st.slider(
+                "Max Symbol Concentration (% of Equity)",
+                min_value=5.0,
+                max_value=50.0,
+                value=curr_max_conc,
+                step=1.0,
+                help="Prevents over-allocation into a single stock (Indian/US portfolio diversification rule)."
+            )
+
+        with col_b:
+            st.write("#### ⚡ Market Microstructure & Velocity")
+            new_collar_pct = st.slider(
+                "Price Collar / Deviation Gate (±%)",
+                min_value=0.2,
+                max_value=5.0,
+                value=curr_collar_pct,
+                step=0.1,
+                help=f"Rejects signals deviating more than this from reference price. E.g. at 1.5%, a {curr_sym}1.00 tick has a {curr_sym}0.015 collar."
+            )
+            st.caption(f"💡 *Deviation example*: On a {curr_sym}100 stock, ±{new_collar_pct}% allows prices between {curr_sym}{100*(1-new_collar_pct/100):.2f} and {curr_sym}{100*(1+new_collar_pct/100):.2f}.")
+
+            new_stop_loss = st.slider(
+                "Default Hard Stop Loss (% Below Entry)",
+                min_value=0.5,
+                max_value=10.0,
+                value=curr_stop_loss,
+                step=0.25,
+                help="Attached as an on-exchange Stop Loss order with the broker immediately on entry."
+            )
+            new_vel_sec = st.number_input(
+                "Symbol Velocity Limit (Max Orders / Second)",
+                min_value=1,
+                max_value=50,
+                value=curr_vel_sec,
+                help="Rate limiter preventing runaway strategy loops per ticker."
+            )
+            new_vel_min = st.number_input(
+                "System-Wide Velocity Limit (Max Orders / Minute)",
+                min_value=5,
+                max_value=500,
+                value=curr_vel_min,
+                help="Global system-wide throttling to prevent exchange rate limit penalties."
+            )
+
+        st.divider()
+        st.write("#### 🇮🇳 Indian Exchange / Product Type Compatibility")
+        product_type = st.selectbox(
+            "Default Execution Product Type",
+            [
+                "DAY (Standard Day Order - US & Global)",
+                "CNC (Cash 'N Carry / Delivery - NSE/BSE)",
+                "MIS (Margin Intraday Square-off - NSE/BSE)",
+                "NRML (Normal F&O / Options - NSE/BSE)"
+            ]
+        )
+        st.caption("Configures standard Indian broker compatibility (Zerodha, Angel One, Upstox, Dhan, Fyers).")
+
+        submitted = st.form_submit_button("💾 Save Risk Parameters to Redis", type="primary", use_container_width=True)
+        if submitted:
+            if redis_connected:
+                r_client.set("risk:config:max_daily_loss", str(new_daily_loss))
+                r_client.set("risk:config:price_collar_pct", str(new_collar_pct))
+                r_client.set("risk:config:velocity_per_sec", str(new_vel_sec))
+                r_client.set("risk:config:velocity_per_min", str(new_vel_min))
+                r_client.set("risk:config:max_order_qty", str(new_max_qty))
+                r_client.set("risk:config:max_order_val", str(new_max_val))
+                r_client.set("risk:config:max_concentration_pct", str(new_max_conc))
+                r_client.set("risk:config:stop_loss_pct", str(new_stop_loss))
+                st.success("✅ Risk parameters updated successfully in Redis! Pre-trade risk engine updated in real-time.")
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error("Cannot connect to Redis to save configurations.")
+
+
+# =====================================================================
+# Page 2: Portfolio & Assets
+# =====================================================================
 elif page == "Portfolio & Assets":
     st.title("💼 Portfolio & Asset Allocation")
-    st.markdown("Real-time view of equity, margins, and position distributions pulled from Redis cache.")
+    st.markdown("Real-time equity, margins, and position distributions pulled from Redis cache.")
     
-    # 1. Fetch data (Live or Mock fallback)
     if redis_connected:
         try:
-            balance = float(r_client.get("account:balance") or 100000.0)
-            blocked_margin = float(r_client.get("account:blocked_margin") or 15000.0)
+            balance = float(r_client.get("balance:cash") or 100000.0)
+            blocked_margin = float(r_client.get("balance:blocked") or 0.0)
             
-            # Fetch active positions
-            position_keys = r_client.keys("position:*")
+            position_keys = r_client.keys("positions:*")
             positions = {}
             for pk in position_keys:
                 ticker = pk.split(":")[-1]
-                positions[ticker] = float(r_client.get(pk) or 0.0)
+                qty = float(r_client.get(pk) or 0.0)
+                if qty > 0:
+                    positions[ticker] = qty
         except Exception as e:
             st.error(f"Error querying Redis: {e}")
-            redis_connected = False # Fallback to mock
+            redis_connected = False
 
     if not redis_connected:
-        # High quality mockup values
-        balance = 125430.50
-        blocked_margin = 18500.00
-        positions = {"AAPL": 150.0, "MSFT": 80.0, "TSLA": 45.0, "GOOGL": 30.0}
+        balance = 100000.00
+        blocked_margin = 0.00
+        positions = {"AAPL": 100.0, "MSFT": 50.0}
 
-    # Derived metrics
     free_cash = balance - blocked_margin
-    mock_prices = {"AAPL": 175.0, "MSFT": 420.0, "TSLA": 220.0, "GOOGL": 150.0}
+    mock_prices = {"AAPL": 320.0, "MSFT": 515.0, "RELIANCE": 2980.0, "TCS": 4150.0, "INFY": 1820.0}
     position_value = sum(qty * mock_prices.get(ticker, 100.0) for ticker, qty in positions.items())
     total_equity = free_cash + blocked_margin + position_value
 
-    # Key Stat Metrics Row
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Net Equity", f"${total_equity:,.2f}", delta=f"+1.42% (Today)")
-    col2.metric("Total Balance", f"${balance:,.2f}")
-    col3.metric("Blocked Margin", f"${blocked_margin:,.2f}")
-    col4.metric("Active Assets Value", f"${position_value:,.2f}")
+    col1.metric("Total Net Equity", f"{curr_sym}{total_equity:,.2f}")
+    col2.metric("Available Cash", f"{curr_sym}{free_cash:,.2f}")
+    col3.metric("Blocked Margin", f"{curr_sym}{blocked_margin:,.2f}")
+    col4.metric("Active Assets Value", f"{curr_sym}{position_value:,.2f}")
 
     st.divider()
-
-    # Visualizations
     v_col1, v_col2 = st.columns([1, 1])
     
     with v_col1:
         st.subheader("Asset Distribution")
-        # Prepare pie data
         df_pie = pd.DataFrame([
-            {"Asset": "Free Cash", "Value": free_cash},
-            {"Asset": "Blocked Margin", "Value": blocked_margin},
+            {"Asset": "Free Cash", "Value": max(0.0, free_cash)},
+            {"Asset": "Blocked Margin", "Value": max(0.0, blocked_margin)},
         ] + [{"Asset": f"Position: {t}", "Value": q * mock_prices.get(t, 100.0)} for t, q in positions.items()])
         
         fig_pie = px.pie(df_pie, values='Value', names='Asset', hole=0.4,
@@ -192,28 +419,30 @@ elif page == "Portfolio & Assets":
         st.plotly_chart(fig_pie, use_container_width=True)
 
     with v_col2:
-        st.subheader("Current Positions Summary")
+        st.subheader("Current Open Positions")
         if positions:
             df_pos = pd.DataFrame([
                 {"Ticker": t, "Quantity": q, "Value": q * mock_prices.get(t, 100.0)} for t, q in positions.items()
             ])
-            fig_bar = px.bar(df_pos, x='Ticker', y='Value', text_auto='.2s', labels={'Value':'Total Value ($)'},
+            fig_bar = px.bar(df_pos, x='Ticker', y='Value', text_auto='.2s', labels={'Value': f'Total Value ({curr_sym})'},
                              color='Ticker', color_discrete_sequence=px.colors.qualitative.Set2)
             st.plotly_chart(fig_bar, use_container_width=True)
         else:
-            st.info("No active positions found in the cache.")
+            st.info("No active positions currently open.")
 
-# --- Page 2: Order History ---
+
+# =====================================================================
+# Page 3: Order History
+# =====================================================================
 elif page == "Order History":
     st.title("📋 Order Audit Trail")
-    st.markdown("Transactional audit trail queried asynchronously from the persistent Order Management SQL Database.")
+    st.markdown("Transactional audit trail queried asynchronously from persistent PostgreSQL database.")
     
-    # 1. Fetch data
     orders_df = pd.DataFrame()
     if db_connected:
         try:
             query = """
-            SELECT order_id, symbol AS ticker, qty AS quantity, side, status, created_at AS timestamp, limit_price
+            SELECT order_id, symbol AS ticker, qty AS quantity, side, status, strategy, provider, created_at AS timestamp, limit_price, filled_avg_price
             FROM tracked_orders
             ORDER BY created_at DESC
             LIMIT 100;
@@ -223,26 +452,21 @@ elif page == "Order History":
             st.error(f"Error querying SQL Database: {e}")
             db_connected = False
 
-    if not db_connected:
-        # Fallback Mock Data
+    if not db_connected or orders_df.empty:
         mock_data = {
-            "order_id": [f"ord_f820c{i}" for i in range(5)],
-            "ticker": ["AAPL", "MSFT", "AAPL", "TSLA", "MSFT"],
-            "quantity": [10, 5, 20, 15, 10],
-            "side": ["BUY", "SELL", "BUY", "BUY", "SELL"],
-            "status": ["FILLED", "FILLED", "PENDING", "FAILED", "FILLED"],
-            "timestamp": [
-                "2026-08-02 06:15:02",
-                "2026-08-02 06:10:45",
-                "2026-08-02 06:05:12",
-                "2026-08-02 05:59:30",
-                "2026-08-02 05:42:15"
-            ],
-            "limit_price": [174.50, 421.10, 173.80, 222.00, 419.80]
+            "order_id": [f"ord_f820c{i}" for i in range(3)],
+            "ticker": ["AAPL", "MSFT", "AAPL"],
+            "quantity": [100, 100, 50],
+            "side": ["BUY", "SELL", "BUY"],
+            "status": ["COMPLETED", "COMPLETED", "PENDING"],
+            "strategy": ["SmaCrossover", "MeanReversion", "SmaCrossover"],
+            "provider": ["alpaca", "alpaca", "alpaca"],
+            "timestamp": ["2026-08-28 16:20:53", "2026-08-28 16:20:53", "2026-08-28 16:21:04"],
+            "limit_price": [321.13, 515.87, 321.50],
+            "filled_avg_price": [321.13, 515.87, 0.0]
         }
         orders_df = pd.DataFrame(mock_data)
 
-    # 2. Filters
     f_col1, f_col2, f_col3 = st.columns(3)
     with f_col1:
         selected_ticker = st.selectbox("Filter Ticker", ["ALL"] + list(orders_df["ticker"].unique()))
@@ -251,7 +475,6 @@ elif page == "Order History":
     with f_col3:
         search_id = st.text_input("Search Order ID")
 
-    # Apply filters
     filtered_df = orders_df.copy()
     if selected_ticker != "ALL":
         filtered_df = filtered_df[filtered_df["ticker"] == selected_ticker]
@@ -263,113 +486,44 @@ elif page == "Order History":
     st.subheader(f"Recent Orders ({len(filtered_df)} items matching)")
     st.dataframe(filtered_df, use_container_width=True)
 
-    # --- ENHANCEMENT POINT: PUSH TRIGGERS ---
-    st.divider()
-    st.info("💡 **Enhancement Hook: Interactive Order Dispatch**")
-    
-    with st.expander("Trigger Manual Transaction (Future Write Trigger)"):
-        st.warning("⚠️ Manual trading is currently locked in Read-Only Mode.")
-        
-        # Inactive form fields
-        col1, col2, col3, col4 = st.columns(4)
-        col1.text_input("Target Symbol", value="AAPL", disabled=True)
-        col2.number_input("Shares Quantity", min_value=1, value=100, disabled=True)
-        col3.selectbox("Order Side", ["BUY", "SELL"], disabled=True)
-        col4.number_input("Limit Price ($)", value=175.0, disabled=True)
-        
-        # Disabled button representing the future trigger
-        st.button("Transmit Order to Ingress Gateway", disabled=True, type="primary")
-        
-        st.code("""
-# [ENHANCEMENT POINT: WRITE TRIGGER IN STAGE 2]
-# When the trigger is enabled, the button above will invoke this client method:
-# 
-# import grpc
-# import order_processing_pb2 as pb
-# import order_processing_pb2_grpc as pb_grpc
-# 
-# def trigger_order_submission(ticker, qty, side, limit_price):
-#     with grpc.insecure_channel("order-processing-service:50051") as channel:
-#         stub = pb_grpc.OrderProcessingServiceStub(channel)
-#         response = stub.PlaceOrder(pb.OrderRequest(
-#             ticker=ticker,
-#             quantity=qty,
-#             side=side,
-#             limit_price=limit_price
-#         ))
-#     return response.order_id
-        """, language="python")
 
-# --- Page 3: Provider Status ---
+# =====================================================================
+# Page 4: Provider Status
+# =====================================================================
 elif page == "Provider Status":
     st.title("🔌 Broker Gateway Connection Providers")
-    st.markdown("Real-time telemetry and health state of active stateless credential gateways.")
+    st.markdown("Stateless broker gateway interfaces & health states.")
 
-    # Gateway state grid
     col1, col2 = st.columns(2)
-
     with col1:
-        st.subheader("Alpaca Ingress Gateway")
+        st.subheader("Alpaca / Global Gateway")
         st.metric("Status", "Connected", delta="Latency: 18ms")
         st.json({
             "connection_type": "WebSocket + REST",
             "connected_symbol_channels": ["AAPL", "MSFT"],
-            "session_active_seconds": 1240,
+            "session_active_seconds": 1840,
             "feed_source": "iex",
+            "supported_order_types": ["MARKET", "LIMIT", "BRACKET_STOP_LOSS"],
             "api_endpoint": "https://paper-api.alpaca.markets"
         })
 
     with col2:
-        st.subheader("Broker X Ingress Gateway")
-        st.metric("Status", "Standby / Unused", delta="Latency: --", delta_color="off")
+        st.subheader("Indian Broker Gateway (Zerodha / Angel One)")
+        st.metric("Status", "Configured (Proto Ready)", delta="Indian Mode Compatible", delta_color="normal")
         st.json({
-            "connection_type": "None",
-            "connected_symbol_channels": [],
-            "session_active_seconds": 0,
-            "api_endpoint": "http://localhost:8001"
+            "connection_type": "KiteConnect / SmartAPI Ready",
+            "exchanges_supported": ["NSE_EQ", "NSE_FO", "BSE_EQ"],
+            "product_types": ["CNC", "MIS", "NRML"],
+            "supported_order_types": ["MARKET", "LIMIT", "SL", "SL-M", "GTT"],
+            "circuit_collar_protection": "Active (1.5% - 20%)"
         })
 
-    # --- ENHANCEMENT POINT: PUSH TRIGGERS ---
-    st.divider()
-    st.info("💡 **Enhancement Hook: Strategy Parameter Tuning**")
-    
-    with st.expander("Update Running Ticker Strategy Parameters"):
-        st.warning("⚠️ Strategy parameter tuning is currently locked in Read-Only Mode.")
-        
-        target_strat = st.selectbox("Select Strategy Instance to Tune", ["AAPL - SMA Crossover", "MSFT - Mean Reversion"], disabled=True)
-        col1, col2 = st.columns(2)
-        col1.slider("Fast Moving Average Interval (Ticks)", 5, 50, 10, disabled=True)
-        col2.slider("Slow Moving Average Interval (Ticks)", 20, 200, 30, disabled=True)
-        
-        st.button("Push Configuration Settings", disabled=True)
-        
-        st.code("""
-# [ENHANCEMENT POINT: STRATEGY TUNE WRITE TRIGGER]
-# In the write-enabled model, clicking the submit button executes this gRPC channel pipeline:
-#
-# import grpc
-# import strategy_tuning_pb2 as pb
-# import strategy_tuning_pb2_grpc as pb_grpc
-# 
-# def push_strategy_update(strategy_id, fast_ma, slow_ma):
-#     # We route parameters directly to the Envoy load balancer (tick-lb) proxying strategy endpoints
-#     with grpc.insecure_channel("tick-lb:50051") as channel:
-#         stub = pb_grpc.StrategyTunerStub(channel)
-#         result = stub.UpdateParams(pb.ParamRequest(
-#             strategy_id=strategy_id,
-#             parameters={"fast_period": str(fast_ma), "slow_period": str(slow_ma)}
-#         ))
-#     return result.success
-        """, language="python")
 
-# --- Page 4: System Telemetry ---
+# =====================================================================
+# Page 5: System Telemetry
+# =====================================================================
 elif page == "System Telemetry":
     st.title("📊 System Telemetry (Grafana)")
-    st.markdown("Real-time telemetry and pipeline performance dashboards loaded directly from Grafana.")
-    
-    # We use a relative path so it routes through the API Gateway automatically
+    st.markdown("Real-time telemetry and pipeline performance loaded from Grafana.")
     grafana_url = "/grafana/"
-    
-    st.info("💡 Exposing Grafana dynamically via the central API Gateway at `/grafana/`.")
-    
     st.components.v1.iframe(grafana_url, height=800, scrolling=True)

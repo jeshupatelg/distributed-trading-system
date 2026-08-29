@@ -21,6 +21,12 @@ service OrderExecutionService {
 
   // Queries order fill and state details (Proxy Unary)
   rpc GetOrderStatus (OrderStatusRequest) returns (OrderStatusResponse);
+
+  // Emergency: Cancels all working/open orders on broker (Unary)
+  rpc CancelAllOrders (CancelAllRequest) returns (CancelAllResponse);
+
+  // Emergency: Closes all open positions and cancels open orders (Unary)
+  rpc CloseAllPositions (ClosePositionsRequest) returns (ClosePositionsResponse);
 }
 
 
@@ -43,8 +49,11 @@ message OrderRequest {
   string symbol = 1;
   int32 qty = 2;
   string side = 3;       // "BUY" or "SELL"
-  string order_type = 4; // "market" or "limit"
+  string order_type = 4; // "market", "limit", "stop", "stop_limit"
   double limit_price = 5;
+  double stop_loss_price = 6;    // Optional Stop Loss trigger price (Bracket / Stop)
+  double take_profit_price = 7;  // Optional Take Profit limit price
+  string product_type = 8;       // e.g. "DAY", "CNC" (Delivery), "MIS" (Intraday), "NRML" (F&O)
 }
 
 message OrderResponse {
@@ -82,3 +91,25 @@ message HistoricalBarsRequest {
 message HistoricalBarsResponse {
   repeated MarketDataResponse bars = 1;
 }
+
+message CancelAllRequest {
+  string provider = 1;
+}
+
+message CancelAllResponse {
+  bool success = 1;
+  int32 cancelled_count = 2;
+  string message = 3;
+}
+
+message ClosePositionsRequest {
+  string provider = 1;
+  bool cancel_orders = 2;
+}
+
+message ClosePositionsResponse {
+  bool success = 1;
+  int32 closed_count = 2;
+  string message = 3;
+}
+

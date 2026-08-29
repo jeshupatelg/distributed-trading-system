@@ -1,5 +1,9 @@
 package com.trading.ops.service;
 
+import com.trading.connection.grpc.CancelAllRequest;
+import com.trading.connection.grpc.CancelAllResponse;
+import com.trading.connection.grpc.ClosePositionsRequest;
+import com.trading.connection.grpc.ClosePositionsResponse;
 import com.trading.connection.grpc.OrderExecutionServiceGrpc;
 import com.trading.connection.grpc.OrderRequest;
 import com.trading.connection.grpc.OrderResponse;
@@ -44,6 +48,52 @@ public class OrderExecutionClient {
             throw e;
         }
     }
+
+    /**
+     * Emergency: Cancels all open orders on the designated provider gateway.
+     */
+    public CancelAllResponse cancelAllOrders(String provider) {
+        String endpoint = resolveEndpoint(provider);
+        log.warn("EMERGENCY: Routing gRPC CancelAllOrders for provider '{}' to endpoint '{}'", provider, endpoint);
+
+        ManagedChannel channel = getOrCreateChannel(endpoint);
+        OrderExecutionServiceGrpc.OrderExecutionServiceBlockingStub stub = 
+            OrderExecutionServiceGrpc.newBlockingStub(channel)
+                .withDeadlineAfter(10, TimeUnit.SECONDS);
+
+        try {
+            CancelAllRequest request = CancelAllRequest.newBuilder().setProvider(provider).build();
+            return stub.cancelAllOrders(request);
+        } catch (StatusRuntimeException e) {
+            log.error("gRPC CancelAllOrders failed for provider '{}': {}", provider, e.getStatus());
+            return CancelAllResponse.newBuilder().setSuccess(false).setMessage(e.getMessage()).build();
+        }
+    }
+
+    /**
+     * Emergency: Closes all open positions and cancels open orders on provider gateway.
+     */
+    public ClosePositionsResponse closeAllPositions(String provider) {
+        String endpoint = resolveEndpoint(provider);
+        log.warn("EMERGENCY: Routing gRPC CloseAllPositions for provider '{}' to endpoint '{}'", provider, endpoint);
+
+        ManagedChannel channel = getOrCreateChannel(endpoint);
+        OrderExecutionServiceGrpc.OrderExecutionServiceBlockingStub stub = 
+            OrderExecutionServiceGrpc.newBlockingStub(channel)
+                .withDeadlineAfter(15, TimeUnit.SECONDS);
+
+        try {
+            ClosePositionsRequest request = ClosePositionsRequest.newBuilder()
+                .setProvider(provider)
+                .setCancelOrders(true)
+                .build();
+            return stub.closeAllPositions(request);
+        } catch (StatusRuntimeException e) {
+            log.error("gRPC CloseAllPositions failed for provider '{}': {}", provider, e.getStatus());
+            return ClosePositionsResponse.newBuilder().setSuccess(false).setMessage(e.getMessage()).build();
+        }
+    }
+
 
     private String resolveEndpoint(String provider) {
         String key = "trading.providers." + provider.toLowerCase();

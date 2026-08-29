@@ -57,22 +57,34 @@ public class SignalConsumer {
 
             // Generate unique order ID
             String clientOrderId = UUID.randomUUID().toString();
-            double estimatedCost = signal.price() * signal.qty();
 
-            // 1. Run risk validation checks & local margin lock
-            boolean riskApproved = riskManager.validateAndLock(clientOrderId, estimatedCost);
-            if (!riskApproved) {
-                log.warn("Order placement rejected by pre-order risk gate for signal: {}", signal);
+            // 1. Run comprehensive Pre-Trade Risk Engine evaluation & margin lock
+            RiskManager.RiskDecision decision = riskManager.evaluateAndLock(
+                clientOrderId,
+                signal.symbol(),
+                signal.qty(),
+                signal.price(),
+                action
+            );
+
+            if (!decision.approved()) {
+                log.warn("ORDER REJECTED by Pre-Trade Risk Engine. Reason: {}, Signal: {}", decision.reason(), signal);
                 return;
             }
 
-            // 2. Submit transaction payload to designated broker gateway via gRPC
-            OrderRequest orderRequest = OrderRequest.newBuilder()
+            // 2. Submit transaction payload to designated broker gateway via gRPC (with on-exchange Hard Stop Loss)
+            OrderRequest.Builder orderRequestBuilder = OrderRequest.newBuilder()
                 .setSymbol(signal.symbol())
                 .setQty(signal.qty())
                 .setSide(action)
                 .setOrderType("market") // defaults to market order
-                .build();
+                .setProductType("DAY"); // Indian broker compatible ("CNC", "MIS", "DAY")
+
+            if (decision.stopLossPrice() > 0) {
+                orderRequestBuilder.setStopLossPrice(decision.stopLossPrice());
+            }
+
+            OrderRequest orderRequest = orderRequestBuilder.build();
 
             try {
                 OrderResponse response = executionClient.placeOrder(provider, orderRequest);
@@ -102,7 +114,7 @@ public class SignalConsumer {
 
             } catch (Exception e) {
                 log.error("Order submission failed. Reverting risk margin lock for order ID: {}", clientOrderId, e);
-                riskManager.revertLock(clientOrderId, estimatedCost);
+                riskManager.revertLock(clientOrderId, decision.calculatedCost());
             }
 
         } catch (Exception e) {

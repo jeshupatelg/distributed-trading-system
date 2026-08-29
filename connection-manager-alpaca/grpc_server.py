@@ -197,6 +197,9 @@ class OrderExecutionServicer(
             request.side,
             request.order_type,
         )
+        stop_loss_price = getattr(request, 'stop_loss_price', 0.0)
+        take_profit_price = getattr(request, 'take_profit_price', 0.0)
+
         try:
             order = await self.loop.run_in_executor(
                 self.thread_pool,
@@ -206,6 +209,8 @@ class OrderExecutionServicer(
                 request.side,
                 request.order_type,
                 request.limit_price if request.order_type.lower() == "limit" else None,
+                stop_loss_price if stop_loss_price > 0 else None,
+                take_profit_price if take_profit_price > 0 else None,
             )
 
             order_id = str(order.id)
@@ -287,6 +292,55 @@ class OrderExecutionServicer(
             context.set_details(str(e))
             context.set_code(grpc.StatusCode.NOT_FOUND)
             return connection_manager_pb2.OrderStatusResponse()
+
+    async def CancelAllOrders(self, request, context):
+        """
+        Emergency gRPC Unary method to cancel all open orders.
+        """
+        logger.warning("CancelAllOrders emergency request received for provider: %s", getattr(request, 'provider', 'default'))
+        try:
+            cancelled_count = await self.loop.run_in_executor(
+                self.thread_pool,
+                self.rest_client.cancel_all_orders,
+            )
+            return connection_manager_pb2.CancelAllResponse(
+                success=True,
+                cancelled_count=cancelled_count,
+                message=f"Successfully requested cancellation of {cancelled_count} orders.",
+            )
+        except Exception as e:
+            logger.error("Error in CancelAllOrders: %s", e)
+            return connection_manager_pb2.CancelAllResponse(
+                success=False,
+                cancelled_count=0,
+                message=str(e),
+            )
+
+    async def CloseAllPositions(self, request, context):
+        """
+        Emergency gRPC Unary method to close all open positions.
+        """
+        cancel_orders = getattr(request, 'cancel_orders', True)
+        logger.warning("CloseAllPositions emergency request received for provider: %s (cancel_orders=%s)", getattr(request, 'provider', 'default'), cancel_orders)
+        try:
+            closed_count = await self.loop.run_in_executor(
+                self.thread_pool,
+                self.rest_client.close_all_positions,
+                cancel_orders,
+            )
+            return connection_manager_pb2.ClosePositionsResponse(
+                success=True,
+                closed_count=closed_count,
+                message=f"Successfully initiated closure of {closed_count} positions.",
+            )
+        except Exception as e:
+            logger.error("Error in CloseAllPositions: %s", e)
+            return connection_manager_pb2.ClosePositionsResponse(
+                success=False,
+                closed_count=0,
+                message=str(e),
+            )
+
 
 
 async def start_grpc_server(

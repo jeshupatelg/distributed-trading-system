@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x18\x63onnection_manager.proto\x12\x12trading.connection\"$\n\x11MarketDataRequest\x12\x0f\n\x07symbols\x18\x01 \x03(\t\"\x91\x01\n\x12MarketDataResponse\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\x0c\n\x04open\x18\x02 \x01(\x01\x12\x0c\n\x04high\x18\x03 \x01(\x01\x12\x0b\n\x03low\x18\x04 \x01(\x01\x12\r\n\x05\x63lose\x18\x05 \x01(\x01\x12\x0e\n\x06volume\x18\x06 \x01(\x03\x12\x11\n\ttimestamp\x18\x07 \x01(\t\x12\x10\n\x08provider\x18\x08 \x01(\t\"b\n\x0cOrderRequest\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\x0b\n\x03qty\x18\x02 \x01(\x05\x12\x0c\n\x04side\x18\x03 \x01(\t\x12\x12\n\norder_type\x18\x04 \x01(\t\x12\x13\n\x0blimit_price\x18\x05 \x01(\x01\"\x9b\x01\n\rOrderResponse\x12\x10\n\x08order_id\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x0b\n\x03qty\x18\x03 \x01(\x05\x12\x0c\n\x04side\x18\x04 \x01(\t\x12\x0e\n\x06status\x18\x05 \x01(\t\x12\x17\n\x0f\x63lient_order_id\x18\x06 \x01(\t\x12\x12\n\norder_type\x18\x07 \x01(\t\x12\x10\n\x08provider\x18\x08 \x01(\t\"&\n\x12OrderStatusRequest\x12\x10\n\x08order_id\x18\x01 \x01(\t\"\xbb\x01\n\x13OrderStatusResponse\x12\x10\n\x08order_id\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x0b\n\x03qty\x18\x03 \x01(\x05\x12\x0c\n\x04side\x18\x04 \x01(\t\x12\x0e\n\x06status\x18\x05 \x01(\t\x12\x12\n\nfilled_qty\x18\x06 \x01(\x05\x12\x18\n\x10\x66illed_avg_price\x18\x07 \x01(\x01\x12\x17\n\x0f\x63lient_order_id\x18\x08 \x01(\t\x12\x10\n\x08provider\x18\t \x01(\t\"6\n\x15HistoricalBarsRequest\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\r\n\x05limit\x18\x02 \x01(\x05\"N\n\x16HistoricalBarsResponse\x12\x34\n\x04\x62\x61rs\x18\x01 \x03(\x0b\x32&.trading.connection.MarketDataResponse2\xe4\x01\n\x11MarketDataService\x12\x63\n\x10StreamMarketData\x12%.trading.connection.MarketDataRequest\x1a&.trading.connection.MarketDataResponse0\x01\x12j\n\x11GetHistoricalBars\x12).trading.connection.HistoricalBarsRequest\x1a*.trading.connection.HistoricalBarsResponse2\xcd\x01\n\x15OrderExecutionService\x12Q\n\nPlaceOrder\x12 .trading.connection.OrderRequest\x1a!.trading.connection.OrderResponse\x12\x61\n\x0eGetOrderStatus\x12&.trading.connection.OrderStatusRequest\x1a\'.trading.connection.OrderStatusResponseB\x1f\n\x1b\x63om.trading.connection.grpcP\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x18\x63onnection_manager.proto\x12\x12trading.connection\"$\n\x11MarketDataRequest\x12\x0f\n\x07symbols\x18\x01 \x03(\t\"\x91\x01\n\x12MarketDataResponse\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\x0c\n\x04open\x18\x02 \x01(\x01\x12\x0c\n\x04high\x18\x03 \x01(\x01\x12\x0b\n\x03low\x18\x04 \x01(\x01\x12\r\n\x05\x63lose\x18\x05 \x01(\x01\x12\x0e\n\x06volume\x18\x06 \x01(\x03\x12\x11\n\ttimestamp\x18\x07 \x01(\t\x12\x10\n\x08provider\x18\x08 \x01(\t\"\xac\x01\n\x0cOrderRequest\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\x0b\n\x03qty\x18\x02 \x01(\x05\x12\x0c\n\x04side\x18\x03 \x01(\t\x12\x12\n\norder_type\x18\x04 \x01(\t\x12\x13\n\x0blimit_price\x18\x05 \x01(\x01\x12\x17\n\x0fstop_loss_price\x18\x06 \x01(\x01\x12\x19\n\x11take_profit_price\x18\x07 \x01(\x01\x12\x14\n\x0cproduct_type\x18\x08 \x01(\t\"\x9b\x01\n\rOrderResponse\x12\x10\n\x08order_id\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x0b\n\x03qty\x18\x03 \x01(\x05\x12\x0c\n\x04side\x18\x04 \x01(\t\x12\x0e\n\x06status\x18\x05 \x01(\t\x12\x17\n\x0f\x63lient_order_id\x18\x06 \x01(\t\x12\x12\n\norder_type\x18\x07 \x01(\t\x12\x10\n\x08provider\x18\x08 \x01(\t\"&\n\x12OrderStatusRequest\x12\x10\n\x08order_id\x18\x01 \x01(\t\"\xbb\x01\n\x13OrderStatusResponse\x12\x10\n\x08order_id\x18\x01 \x01(\t\x12\x0e\n\x06symbol\x18\x02 \x01(\t\x12\x0b\n\x03qty\x18\x03 \x01(\x05\x12\x0c\n\x04side\x18\x04 \x01(\t\x12\x0e\n\x06status\x18\x05 \x01(\t\x12\x12\n\nfilled_qty\x18\x06 \x01(\x05\x12\x18\n\x10\x66illed_avg_price\x18\x07 \x01(\x01\x12\x17\n\x0f\x63lient_order_id\x18\x08 \x01(\t\x12\x10\n\x08provider\x18\t \x01(\t\"6\n\x15HistoricalBarsRequest\x12\x0e\n\x06symbol\x18\x01 \x01(\t\x12\r\n\x05limit\x18\x02 \x01(\x05\"N\n\x16HistoricalBarsResponse\x12\x34\n\x04\x62\x61rs\x18\x01 \x03(\x0b\x32&.trading.connection.MarketDataResponse\"$\n\x10\x43\x61ncelAllRequest\x12\x10\n\x08provider\x18\x01 \x01(\t\"N\n\x11\x43\x61ncelAllResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x17\n\x0f\x63\x61ncelled_count\x18\x02 \x01(\x05\x12\x0f\n\x07message\x18\x03 \x01(\t\"@\n\x15\x43losePositionsRequest\x12\x10\n\x08provider\x18\x01 \x01(\t\x12\x15\n\rcancel_orders\x18\x02 \x01(\x08\"P\n\x16\x43losePositionsResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x14\n\x0c\x63losed_count\x18\x02 \x01(\x05\x12\x0f\n\x07message\x18\x03 \x01(\t2\xe4\x01\n\x11MarketDataService\x12\x63\n\x10StreamMarketData\x12%.trading.connection.MarketDataRequest\x1a&.trading.connection.MarketDataResponse0\x01\x12j\n\x11GetHistoricalBars\x12).trading.connection.HistoricalBarsRequest\x1a*.trading.connection.HistoricalBarsResponse2\x99\x03\n\x15OrderExecutionService\x12Q\n\nPlaceOrder\x12 .trading.connection.OrderRequest\x1a!.trading.connection.OrderResponse\x12\x61\n\x0eGetOrderStatus\x12&.trading.connection.OrderStatusRequest\x1a\'.trading.connection.OrderStatusResponse\x12^\n\x0f\x43\x61ncelAllOrders\x12$.trading.connection.CancelAllRequest\x1a%.trading.connection.CancelAllResponse\x12j\n\x11\x43loseAllPositions\x12).trading.connection.ClosePositionsRequest\x1a*.trading.connection.ClosePositionsResponseB\x1f\n\x1b\x63om.trading.connection.grpcP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -36,20 +36,28 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_MARKETDATAREQUEST']._serialized_end=84
   _globals['_MARKETDATARESPONSE']._serialized_start=87
   _globals['_MARKETDATARESPONSE']._serialized_end=232
-  _globals['_ORDERREQUEST']._serialized_start=234
-  _globals['_ORDERREQUEST']._serialized_end=332
-  _globals['_ORDERRESPONSE']._serialized_start=335
-  _globals['_ORDERRESPONSE']._serialized_end=490
-  _globals['_ORDERSTATUSREQUEST']._serialized_start=492
-  _globals['_ORDERSTATUSREQUEST']._serialized_end=530
-  _globals['_ORDERSTATUSRESPONSE']._serialized_start=533
-  _globals['_ORDERSTATUSRESPONSE']._serialized_end=720
-  _globals['_HISTORICALBARSREQUEST']._serialized_start=722
-  _globals['_HISTORICALBARSREQUEST']._serialized_end=776
-  _globals['_HISTORICALBARSRESPONSE']._serialized_start=778
-  _globals['_HISTORICALBARSRESPONSE']._serialized_end=856
-  _globals['_MARKETDATASERVICE']._serialized_start=859
-  _globals['_MARKETDATASERVICE']._serialized_end=1087
-  _globals['_ORDEREXECUTIONSERVICE']._serialized_start=1090
-  _globals['_ORDEREXECUTIONSERVICE']._serialized_end=1295
+  _globals['_ORDERREQUEST']._serialized_start=235
+  _globals['_ORDERREQUEST']._serialized_end=407
+  _globals['_ORDERRESPONSE']._serialized_start=410
+  _globals['_ORDERRESPONSE']._serialized_end=565
+  _globals['_ORDERSTATUSREQUEST']._serialized_start=567
+  _globals['_ORDERSTATUSREQUEST']._serialized_end=605
+  _globals['_ORDERSTATUSRESPONSE']._serialized_start=608
+  _globals['_ORDERSTATUSRESPONSE']._serialized_end=795
+  _globals['_HISTORICALBARSREQUEST']._serialized_start=797
+  _globals['_HISTORICALBARSREQUEST']._serialized_end=851
+  _globals['_HISTORICALBARSRESPONSE']._serialized_start=853
+  _globals['_HISTORICALBARSRESPONSE']._serialized_end=931
+  _globals['_CANCELALLREQUEST']._serialized_start=933
+  _globals['_CANCELALLREQUEST']._serialized_end=969
+  _globals['_CANCELALLRESPONSE']._serialized_start=971
+  _globals['_CANCELALLRESPONSE']._serialized_end=1049
+  _globals['_CLOSEPOSITIONSREQUEST']._serialized_start=1051
+  _globals['_CLOSEPOSITIONSREQUEST']._serialized_end=1115
+  _globals['_CLOSEPOSITIONSRESPONSE']._serialized_start=1117
+  _globals['_CLOSEPOSITIONSRESPONSE']._serialized_end=1197
+  _globals['_MARKETDATASERVICE']._serialized_start=1200
+  _globals['_MARKETDATASERVICE']._serialized_end=1428
+  _globals['_ORDEREXECUTIONSERVICE']._serialized_start=1431
+  _globals['_ORDEREXECUTIONSERVICE']._serialized_end=1840
 # @@protoc_insertion_point(module_scope)
