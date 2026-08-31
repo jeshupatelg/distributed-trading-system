@@ -1,0 +1,221 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "Total Tracked Orders",
+      "type": "stat",
+      "datasource": {
+        "type": "postgres",
+        "uid": "PostgreSQL"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PostgreSQL"
+          },
+          "editorMode": "code",
+          "rawSql": "SELECT count(*) as value FROM tracked_orders",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "title": "Orders by Status",
+      "type": "bargauge",
+      "datasource": {
+        "type": "postgres",
+        "uid": "PostgreSQL"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 9,
+        "x": 6,
+        "y": 0
+      },
+      "id": 2,
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PostgreSQL"
+          },
+          "editorMode": "code",
+          "rawSql": "SELECT status as metric, count(*) as value FROM tracked_orders GROUP BY status",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "title": "Orders by Symbol",
+      "type": "bargauge",
+      "datasource": {
+        "type": "postgres",
+        "uid": "PostgreSQL"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 9,
+        "x": 15,
+        "y": 0
+      },
+      "id": 3,
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PostgreSQL"
+          },
+          "editorMode": "code",
+          "rawSql": "SELECT symbol as metric, count(*) as value FROM tracked_orders GROUP BY symbol",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "title": "Recent Tracked Orders",
+      "type": "table",
+      "datasource": {
+        "type": "postgres",
+        "uid": "PostgreSQL"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "id": 4,
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PostgreSQL"
+          },
+          "editorMode": "code",
+          "rawSql": "SELECT order_id, symbol, side, qty, status, strategy, created_at FROM tracked_orders ORDER BY created_at DESC LIMIT 100",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "title": "PostgreSQL Active Connections",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 16
+      },
+      "id": 5,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "editorMode": "code",
+          "expr": "pg_stat_database_numbackends{datname=\"trading_agent\"}",
+          "legendFormat": "Backends ({{instance}})",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Transaction Commits / Sec",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 16
+      },
+      "id": 6,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(pg_stat_database_xact_commit{datname=\"trading_agent\"}[1m])",
+          "legendFormat": "Commits ({{instance}})",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Cache Hit Ratio (%)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 16
+      },
+      "id": 7,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(pg_stat_database_blks_hit{datname=\"trading_agent\"}[1m]) / (rate(pg_stat_database_blks_hit{datname=\"trading_agent\"}[1m]) + rate(pg_stat_database_blks_read{datname=\"trading_agent\"}[1m])) * 100",
+          "legendFormat": "Hit Ratio ({{instance}})",
+          "range": true,
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["postgres", "orders"],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "PostgreSQL Order Metrics",
+  "uid": "postgres-order-metrics",
+  "version": 1,
+  "weekStart": ""
+}

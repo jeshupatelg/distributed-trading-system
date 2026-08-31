@@ -251,6 +251,7 @@ class AlpacaStreamClient:
         """
         logger.debug("Live bar received: %s", bar)
         import telemetry
+        telemetry.TICKS_RECEIVED.labels(ticker=bar.symbol).inc()
         telemetry.TICKS_BROADCASTED.labels(ticker=bar.symbol).inc()
         if self.grpc_broadcaster:
             await self.grpc_broadcaster.broadcast_bar(bar)

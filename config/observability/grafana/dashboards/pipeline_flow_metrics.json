@@ -1,0 +1,263 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "Pillar 1 & 2: Pipeline Throughput & Signal Generation (TPS)",
+      "type": "row"
+    },
+    {
+      "title": "1. Market Data Ticks Broadcasted / Sec (Connection Manager)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 1 },
+      "id": 1,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (ticker) (rate(connection_manager_ticks_broadcasted_total[1m]))",
+          "legendFormat": "Broadcasted {{ticker}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "2. Strategy Bars Processed / Sec (Signal Generators)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 1 },
+      "id": 2,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (ticker) (rate(strategy_bars_processed_total[1m]))",
+          "legendFormat": "Processed {{ticker}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "3. Trading Signals Generated / Sec (by Ticker & Direction)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 8 },
+      "id": 3,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (ticker, action) (rate(strategy_signals_generated_total[1m]))",
+          "legendFormat": "Signal {{ticker}} {{action}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "4. Java Microservices Records Consumed / Sec (OPS & OMS)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 8 },
+      "id": 4,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (instance) (rate(kafka_consumer_fetch_manager_records_consumed_total[1m]))",
+          "legendFormat": "Records {{instance}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
+      "id": 101,
+      "title": "Pillar 3: Component Latency & Bottlenecks (P50 / P95 / P99)",
+      "type": "row"
+    },
+    {
+      "title": "5. Strategy Calculation Latency (p50 / p95 / p99)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 16 },
+      "id": 5,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum by (le, ticker) (rate(strategy_execution_duration_seconds_bucket[1m])))",
+          "legendFormat": "p50 {{ticker}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, ticker) (rate(strategy_execution_duration_seconds_bucket[1m])))",
+          "legendFormat": "p95 {{ticker}}",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (le, ticker) (rate(strategy_execution_duration_seconds_bucket[1m])))",
+          "legendFormat": "p99 {{ticker}}",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "title": "6. Envoy Proxy Upstream Latency (p95 by Cluster)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 16 },
+      "id": 6,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_time_bucket{instance=\"/tick-lb\"}[1m])))",
+          "legendFormat": "p95 {{envoy_cluster_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "7. Spring Boot REST API Endpoint Latency (p95)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 23 },
+      "id": 7,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, instance, uri) (rate(http_server_requests_seconds_bucket[1m])))",
+          "legendFormat": "p95 {{instance}} {{uri}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "8. OMS Repository Method Invocation Latency (p95)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 23 },
+      "id": 8,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, repository, method) (rate(spring_data_repository_invocations_seconds_bucket[1m])))",
+          "legendFormat": "p95 {{repository}}#{{method}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 30 },
+      "id": 102,
+      "title": "Pillar 4: Async Flow, Queues & Consumer Lags",
+      "type": "row"
+    },
+    {
+      "title": "9. Kafka Consumer Group Lag (OPS & OMS Groups)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 31 },
+      "id": 9,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (consumergroup, topic) (kafka_consumergroup_lag)",
+          "legendFormat": "{{consumergroup}} on {{topic}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "10. Kafka Topic Partition Ingestion Rate / Sec",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 31 },
+      "id": 10,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (topic) (rate(kafka_topic_partition_current_offset[1m]))",
+          "legendFormat": "{{topic}} msg/sec",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 38 },
+      "id": 103,
+      "title": "Pillar 4: Storage & State Mutations (PostgreSQL & Redis)",
+      "type": "row"
+    },
+    {
+      "title": "11. PostgreSQL Order Table Insertion Rate / Sec",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 39 },
+      "id": 11,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "rate(pg_stat_database_tup_inserted{datname=\"trading_agent\"}[1m])",
+          "legendFormat": "Tup Inserted/sec",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "12. Redis Commands Processed Rate / Sec",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 39 },
+      "id": 12,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "rate(redis_commands_processed_total[1m])",
+          "legendFormat": "Redis Commands/sec",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["pipeline", "flow", "end-to-end", "bottlenecks"],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "End-to-End Pipeline Flow & Bottlenecks",
+  "uid": "pipeline-flow-metrics",
+  "version": 3,
+  "weekStart": ""
+}

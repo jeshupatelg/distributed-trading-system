@@ -1,0 +1,32 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+
+  - name: PostgreSQL
+    type: postgres
+    access: proxy
+    url: host.docker.internal:5432
+    user: admin
+    secureJsonData:
+      password: admin
+    jsonData:
+      database: trading_agent
+      sslmode: disable
+
+  - name: Redis
+    type: redis-datasource
+    access: proxy
+    url: redis://host.docker.internal:6379
+
+  - name: Kafka
+    type: hamedkarbasi93-kafka-datasource
+    access: proxy
+    jsonData:
+      bootstrapServers: kafka:9092

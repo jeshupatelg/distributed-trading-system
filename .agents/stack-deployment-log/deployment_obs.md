@@ -1,7 +1,7 @@
 # Observability (OBS) Stack Deployment Log
 
 ## Intent
-Deployment run of the Observability (OBS) stack changes for the `distributed-trading-system`, migrating Prometheus configuration to dynamic container discovery.
+Deployment run of the Observability (OBS) stack changes for the `distributed-trading-system`, migrating Prometheus configuration to dynamic container discovery and provisioning component-level Grafana dashboards.
 
 ---
 
@@ -10,7 +10,8 @@ Deployment run of the Observability (OBS) stack changes for the `distributed-tra
 | Component Name | Service Name (Docker) | Layer | State | Logs Verified? | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Telemetry** | `prometheus` | Observability | **ACTIVE** | Yes (Success) | Dynamic container discovery configured and Docker socket mounted. |
-| **Gateway** | `connection-manager-alpaca`| Gateway | **ACTIVE** | Yes (Success) | Dynamic scrape labels added. |
+| **Dashboard UI** | `grafana` | Observability | **ACTIVE** | Yes (Success) | Component-level metrics provisioning folder & repeatable dashboards added. |
+| **Gateway** | `connection-manager-alpaca`| Gateway | **ACTIVE** | Yes (Success) | Ingest (`ticks_received`), broadcast, and dropped ticks telemetry instrumented. |
 | **Load Balancer** | `tick-lb` | Gateway | **ACTIVE** | Yes (Success) | Dynamic scrape labels added. |
 | **Strategy AAPL** | `signal-gen-aapl` | Algorithmic | **ACTIVE** | Yes (Success) | Dynamic scrape labels added. |
 | **Strategy MSFT** | `signal-gen-msft` | Algorithmic | **ACTIVE** | Yes (Success) | Dynamic scrape labels added. |
@@ -54,3 +55,30 @@ Deployment run of the Observability (OBS) stack changes for the `distributed-tra
   5. Modified [`sma_crossover.py`](file:///c:/Users/jeshu/Projects/distributed-trading-system/config/strategies/sma_crossover.py) and [`mean_reversion.py`](file:///c:/Users/jeshu/Projects/distributed-trading-system/config/strategies/mean_reversion.py) to dynamically import the parent telemetry module and set gauges for indicators like Moving Averages and Z-scores.
   6. Synced all changes and triggered compose stack redeployment, successfully rebuilding the Python container images and restarting the services.
   7. Confirmed that all scraping targets (`connection-manager-alpaca`, `signal-gen-aapl`, `signal-gen-msft`) are registered and report healthy **UP** status in Prometheus.
+
+### [2026-08-31T22:23:00+05:30] Success Op - Instrument Ingestion Telemetry & Provision Component-Level Metrics Dashboard
+* **Intent**: Monitoring stack setup
+* **Status**: Success (Code, Config & Deployment)
+* **Action**: Instrumented `connection_manager_ticks_received_total` counter in Python connection manager and provisioned a repeatable row multi-panel Grafana dashboard under a dedicated `Component-level-metrics` folder.
+* **Root Cause Analysis (RCA)**:
+  - Connection manager telemetry only exported egress tick counts (`connection_manager_ticks_broadcasted_total`), rendering it impossible to compute market tick ingest throughput, dropped ticks, or passthrough efficiency.
+  - Grafana dashboard provisioning (`dashboards.yaml`) lacked a separate folder provider for component-level metrics.
+* **Fix Applied**:
+  1. Instrumented `TICKS_RECEIVED` (`connection_manager_ticks_received_total`) Counter in `telemetry.py` and incremented it inside `_bar_handler` in `alpaca_client.py`.
+  2. Configured `Component Level Metrics` provider block in `dashboards.yaml` mapping to `/var/lib/grafana/dashboards/component_level_metrics`.
+  3. Created repeatable row template dashboard `connection_manager_metrics.json` inside `config/observability/grafana/dashboards/component_level_metrics/`.
+  4. Updated [.agent/component_metrics_tracking.md](file:///c:/Users/jeshu/Projects/distributed-trading-system/.agent/component_metrics_tracking.md) to set `Ticks Received / Sec` readiness to `LIVE`.
+  5. Synchronized code changes to the remote docker host via MCP `sync_project_files` and redeployed compose stack via MCP `deploy_compose_stack`.
+
+### [2026-09-01T00:08:00+05:30] Success Op - Instrument Dropped Ticks Telemetry & Provision Drop Rate Panel
+* **Intent**: Monitoring stack setup
+* **Status**: Success (Code, Config & Deployment)
+* **Action**: Instrumented `connection_manager_ticks_dropped_total` counter in Python connection manager and provisioned `3. Ticks Lost / Sec (Drop Rate)` panel in Grafana dashboard.
+* **Root Cause Analysis (RCA)**:
+  - Broadcaster client queues were unconstrained (`maxsize=0`) and lacked explicit drop instrumentation, making it impossible to accurately measure tick drops or protect container RAM against lagging gRPC subscribers.
+* **Fix Applied**:
+  1. Added `TICKS_DROPPED` (`connection_manager_ticks_dropped_total`) Counter in `telemetry.py` with dimension labels `["ticker", "reason"]`.
+  2. Configured bounded client queues (`maxsize=1000`) and instrumented `TICKS_DROPPED` increments on `asyncio.QueueFull` or dispatch exceptions inside `grpc_server.py`.
+  3. Added `3. Ticks Lost / Sec (Drop Rate)` time-series panel to `connection_manager_metrics.json`.
+  4. Updated [.agent/component_metrics_tracking.md](file:///c:/Users/jeshu/Projects/distributed-trading-system/.agent/component_metrics_tracking.md) to set `Ticks Lost / Sec` readiness to `LIVE`.
+  5. Synchronized code changes to the remote docker host via MCP `sync_project_files` and redeployed compose stack via MCP `deploy_compose_stack`.

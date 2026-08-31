@@ -1,0 +1,306 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "Server Live",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } }, "type": "value" }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "id": 1,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "envoy_server_live{instance=\"/tick-lb\"}",
+          "legendFormat": "Live",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Uptime (Hours)",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "id": 2,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "envoy_server_uptime{instance=\"/tick-lb\"} / 3600",
+          "legendFormat": "Uptime",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Active Upstream Connections",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "id": 3,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "sum(envoy_cluster_upstream_cx_active{instance=\"/tick-lb\"})",
+          "legendFormat": "Active Connections",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Active Downstream Connections",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "id": 4,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "sum(envoy_listener_downstream_cx_active{instance=\"/tick-lb\"})",
+          "legendFormat": "Active Downstream",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Memory Allocated (MB)",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 },
+      "id": 5,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "envoy_server_memory_allocated{instance=\"/tick-lb\"} / (1024 * 1024)",
+          "legendFormat": "Memory",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Total Concurrent Connections",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 0 },
+      "id": 6,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "envoy_server_total_connections{instance=\"/tick-lb\"}",
+          "legendFormat": "Connections",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Upstream Requests / Sec (by cluster)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "id": 7,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (envoy_cluster_name) (rate(envoy_cluster_upstream_rq_total{instance=\"/tick-lb\"}[1m]))",
+          "legendFormat": "{{envoy_cluster_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Downstream HTTP Requests / Sec",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "id": 8,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (envoy_http_conn_manager_prefix) (rate(envoy_http_downstream_rq_total{instance=\"/tick-lb\"}[1m]))",
+          "legendFormat": "{{envoy_http_conn_manager_prefix}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Upstream Request Latency (p50 / p95 / p99)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "id": 9,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum by (le, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_time_bucket{instance=\"/tick-lb\"}[1m])))",
+          "legendFormat": "p50 {{envoy_cluster_name}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_time_bucket{instance=\"/tick-lb\"}[1m])))",
+          "legendFormat": "p95 {{envoy_cluster_name}}",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (le, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_time_bucket{instance=\"/tick-lb\"}[1m])))",
+          "legendFormat": "p99 {{envoy_cluster_name}}",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "title": "Upstream Request Errors / Sec",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "id": 10,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{envoy_response_code_class=\"5\",instance=\"/tick-lb\"}[1m]))",
+          "legendFormat": "5xx {{envoy_cluster_name}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (envoy_cluster_name) (rate(envoy_cluster_upstream_rq_xx{envoy_response_code_class=\"4\",instance=\"/tick-lb\"}[1m]))",
+          "legendFormat": "4xx {{envoy_cluster_name}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "title": "Upstream Connection Churn (Open / Close rate)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "id": 11,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (envoy_cluster_name) (rate(envoy_cluster_upstream_cx_total{instance=\"/tick-lb\"}[1m]))",
+          "legendFormat": "New Connections {{envoy_cluster_name}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (envoy_cluster_name) (rate(envoy_cluster_upstream_cx_destroy_total{instance=\"/tick-lb\"}[1m]))",
+          "legendFormat": "Closed Connections {{envoy_cluster_name}}",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "title": "Downstream Connections (Listener)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "id": 12,
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "sum by (envoy_listener_address) (rate(envoy_listener_downstream_cx_total{instance=\"/tick-lb\"}[1m]))",
+          "legendFormat": "New {{envoy_listener_address}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "Prometheus" },
+          "editorMode": "code",
+          "expr": "envoy_listener_downstream_cx_active{instance=\"/tick-lb\"}",
+          "legendFormat": "Active {{envoy_listener_address}}",
+          "refId": "B"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["envoy", "load-balancer", "proxy"],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Envoy Load Balancer Metrics",
+  "uid": "envoy-lb-metrics",
+  "version": 2,
+  "weekStart": ""
+}

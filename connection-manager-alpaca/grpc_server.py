@@ -41,7 +41,8 @@ class gRPCStreamBroadcaster:
         Returns:
             asyncio.Queue: The newly registered queue.
         """
-        queue = asyncio.Queue()
+        max_queue_size = getattr(config, "MAX_CLIENT_QUEUE_SIZE", 1000)
+        queue = asyncio.Queue(maxsize=max_queue_size)
         self.active_queues[queue] = set(symbols)
         logger.info("Registered new gRPC client queue for symbols: %s", symbols)
         return queue
@@ -86,9 +87,15 @@ class gRPCStreamBroadcaster:
         for queue, symbols in list(self.active_queues.items()):
             if not symbols or symbol in symbols:
                 try:
-                    await queue.put(response)
+                    queue.put_nowait(response)
+                except asyncio.QueueFull:
+                    logger.warning("gRPC client queue full for symbol %s. Dropping tick.", symbol)
+                    import telemetry
+                    telemetry.TICKS_DROPPED.labels(ticker=symbol, reason="queue_full").inc()
                 except Exception as e:
                     logger.error("Failed to enqueue bar to client: %s", e)
+                    import telemetry
+                    telemetry.TICKS_DROPPED.labels(ticker=symbol, reason="dispatch_error").inc()
 
 
 class MarketDataServicer(
