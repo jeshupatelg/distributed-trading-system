@@ -31,22 +31,26 @@ async def start_services():
     global kafka_publisher, rest_client, stream_client, broadcaster, grpc_server_instance
     logger.info("Initializing connection manager services...")
 
-    # Initialize Kafka publisher
-    kafka_publisher = KafkaEventPublisher()
-    kafka_publisher.start()
+    try:
+        # Initialize Kafka publisher
+        kafka_publisher = KafkaEventPublisher()
+        kafka_publisher.start()
 
-    # Initialize Alpaca REST client
-    rest_client = AlpacaRestClient()
+        # Initialize Alpaca REST client
+        rest_client = AlpacaRestClient()
 
-    # Initialize broadcaster & gRPC server
-    broadcaster = gRPCStreamBroadcaster()
-    grpc_server_instance = await start_grpc_server(broadcaster, rest_client)
+        # Initialize broadcaster & gRPC server
+        broadcaster = gRPCStreamBroadcaster()
+        grpc_server_instance = await start_grpc_server(broadcaster, rest_client)
 
-    # Initialize and start Alpaca Stream Client
-    stream_client = AlpacaStreamClient(kafka_publisher, broadcaster)
-    stream_client.start()
+        # Initialize and start Alpaca Stream Client
+        stream_client = AlpacaStreamClient(kafka_publisher, broadcaster)
+        stream_client.start()
 
-    logger.info("All connection manager services started successfully.")
+        logger.info("All connection manager services started successfully.")
+    except Exception as e:
+        logger.critical("Fatal error initializing connection-manager-alpaca: %s", e, exc_info=True)
+        raise
 
 
 async def stop_services():

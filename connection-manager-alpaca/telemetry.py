@@ -1,4 +1,4 @@
-from prometheus_client import Counter
+from prometheus_client import Counter, Histogram
 import config
 
 TICKS_RECEIVED = Counter(
@@ -17,6 +17,13 @@ TICKS_DROPPED = Counter(
     "connection_manager_ticks_dropped_total",
     "Total number of market data price ticks dropped due to queue overflow or dispatch error",
     ["ticker", "reason"]
+)
+
+TICK_PROCESSING_DURATION = Histogram(
+    "connection_manager_tick_processing_duration_seconds",
+    "Duration in seconds taken to process and dispatch a market data tick to gRPC queues",
+    ["ticker"],
+    buckets=(0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0)
 )
 
 TRADE_UPDATES_PUBLISHED = Counter(

@@ -21,9 +21,12 @@ We needed an architectural pattern that allows:
    * Enclosed a standardized multi-panel template beneath this row containing:
      - **Panel 1**: Ingest Rate (`Ticks Received / Sec`)
      - **Panel 2**: Egress Rate (`Ticks Broadcast / Sec`)
-     - **Panel 3**: Passthrough Efficiency (%)
-     - **Panel 4**: Trade Update Rate (Kafka events)
-     - **Panel 5**: Container CPU & RAM Utilization
+     - **Panel 3**: Drop Rate (`Ticks Lost / Sec`)
+     - **Panel 4**: Passthrough Efficiency (%)
+     - **Panel 5**: Tick Processing Latency (p95 / p99)
+     - **Panel 6**: Order Updates Received (Kafka events)
+     - **Panel 7**: Container CPU Utilization (%)
+     - **Panel 8**: Container Memory Consumption (MB)
 
 3. **Scoped Query Templating**:
    * Every metric query within the repeatable template scopes its PromQL expression using `{instance=~"${provider}"}` so each generated row panel strictly isolates metrics belonging to its target broker gateway.

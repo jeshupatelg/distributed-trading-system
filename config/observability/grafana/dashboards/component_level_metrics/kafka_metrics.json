@@ -44,7 +44,7 @@
         "uid": "Prometheus"
       },
       "gridPos": {
-        "h": 8,
+        "h": 6,
         "w": 18,
         "x": 6,
         "y": 0
@@ -57,15 +57,15 @@
             "uid": "Prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (consumergroup, topic) (kafka_consumergroup_lag)",
-          "legendFormat": "{{consumergroup}} on {{topic}} lag",
+          "expr": "sum(kafka_consumergroup_lag) by (consumergroup, topic)",
+          "legendFormat": "{{consumergroup}} - {{topic}}",
           "refId": "A"
         }
       ]
     },
     {
-      "title": "Topic Partitions Count",
-      "type": "bargauge",
+      "title": "Topic Partition Message Rate / Sec",
+      "type": "timeseries",
       "datasource": {
         "type": "prometheus",
         "uid": "Prometheus"
@@ -74,7 +74,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 8
+        "y": 6
       },
       "id": 3,
       "targets": [
@@ -84,14 +84,14 @@
             "uid": "Prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (topic) (kafka_topic_partitions)",
-          "legendFormat": "{{topic}} partitions",
+          "expr": "sum(rate(kafka_topic_partition_current_offset[1m])) by (topic)",
+          "legendFormat": "{{topic}}",
           "refId": "A"
         }
       ]
     },
     {
-      "title": "Messages Ingestion Rate / Sec",
+      "title": "Topic Storage Size (Bytes)",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -101,7 +101,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 8
+        "y": 6
       },
       "id": 4,
       "targets": [
@@ -111,8 +111,8 @@
             "uid": "Prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (topic) (rate(kafka_topic_partition_current_offset[1m]))",
-          "legendFormat": "{{topic}} msg/sec",
+          "expr": "sum(kafka_topic_partition_oldest_offset) by (topic)",
+          "legendFormat": "{{topic}}",
           "refId": "A"
         }
       ]
@@ -130,8 +130,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "Kafka Broker Metrics",
+  "title": "Kafka Broker & Consumer Lag Metrics",
   "uid": "kafka-broker-metrics",
-  "version": 2,
+  "version": 1,
   "weekStart": ""
 }

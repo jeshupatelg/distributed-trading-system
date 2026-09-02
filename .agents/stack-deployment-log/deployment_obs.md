@@ -11,10 +11,10 @@ Deployment run of the Observability (OBS) stack changes for the `distributed-tra
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Telemetry** | `prometheus` | Observability | **ACTIVE** | Yes (Success) | Dynamic container discovery configured and Docker socket mounted. |
 | **Dashboard UI** | `grafana` | Observability | **ACTIVE** | Yes (Success) | Component-level metrics provisioning folder & repeatable dashboards added. |
-| **Gateway** | `connection-manager-alpaca`| Gateway | **ACTIVE** | Yes (Success) | Ingest (`ticks_received`), broadcast, and dropped ticks telemetry instrumented. |
-| **Load Balancer** | `tick-lb` | Gateway | **ACTIVE** | Yes (Success) | Dynamic scrape labels added. |
-| **Strategy AAPL** | `signal-gen-aapl` | Algorithmic | **ACTIVE** | Yes (Success) | Dynamic scrape labels added. |
-| **Strategy MSFT** | `signal-gen-msft` | Algorithmic | **ACTIVE** | Yes (Success) | Dynamic scrape labels added. |
+| **Gateway** | `connection-manager-alpaca`| Gateway | **ACTIVE** | Yes (Success) | Ingest (`ticks_received`), broadcast, dropped ticks, and latency telemetry instrumented. |
+| **Load Balancer** | `tick-lb` | Gateway | **ACTIVE** | Yes (Success) | gRPC route prefix `/trading.connection.MarketDataService/` configured. |
+| **Strategy AAPL** | `signal-gen-aapl` | Algorithmic | **ACTIVE** | Yes (Success) | Warm-up state flag & max retries limit instrumented. |
+| **Strategy MSFT** | `signal-gen-msft` | Algorithmic | **ACTIVE** | Yes (Success) | Warm-up state flag & max retries limit instrumented. |
 | **Order Processing** | `order-processing-service`| Order Management| **ACTIVE** | Yes (Success) | Dynamic scrape labels added. |
 | **Order Management** | `order-management-service`| Order Management| **ACTIVE** | Yes (Success) | Dynamic scrape labels added. |
 
@@ -82,3 +82,56 @@ Deployment run of the Observability (OBS) stack changes for the `distributed-tra
   3. Added `3. Ticks Lost / Sec (Drop Rate)` time-series panel to `connection_manager_metrics.json`.
   4. Updated [.agent/component_metrics_tracking.md](file:///c:/Users/jeshu/Projects/distributed-trading-system/.agent/component_metrics_tracking.md) to set `Ticks Lost / Sec` readiness to `LIVE`.
   5. Synchronized code changes to the remote docker host via MCP `sync_project_files` and redeployed compose stack via MCP `deploy_compose_stack`.
+
+### [2026-09-01T00:30:00+05:30] Success Op - Instrument Tick Processing Latency Histogram & Provision Latency Panel
+* **Intent**: Monitoring stack setup
+* **Status**: Success (Code, Config & Deployment)
+* **Action**: Instrumented `connection_manager_tick_processing_duration_seconds` Histogram in Python connection manager and provisioned `5. Tick Processing Latency (p95 / p99)` panel in Grafana dashboard.
+* **Root Cause Analysis (RCA)**:
+  - Connection manager telemetry lacked processing latency metrics, rendering it impossible to quantify internal tick traversal duration or calculate p95/p99 percentiles.
+* **Fix Applied**:
+  1. Added `TICK_PROCESSING_DURATION` (`connection_manager_tick_processing_duration_seconds`) Histogram in `telemetry.py` with custom buckets ranging from `0.1ms` to `1.0s`.
+  2. Wrapped `_bar_handler` execution in `with telemetry.TICK_PROCESSING_DURATION.labels(ticker=bar.symbol).time():` inside `alpaca_client.py`.
+  3. Added `5. Tick Processing Latency (p95 / p99)` time-series panel to `connection_manager_metrics.json`.
+  4. Updated [.agent/component_metrics_tracking.md](file:///c:/Users/jeshu/Projects/distributed-trading-system/.agent/component_metrics_tracking.md) to set `tick broadcast latency` readiness to `LIVE`.
+  5. Synchronized code changes to remote docker host via MCP `sync_project_files` and redeployed compose stack via MCP `deploy_compose_stack`.
+
+### [2026-09-01T01:13:00+05:30] Success Op - Fix Envoy gRPC Route Matching & Signal Generator Warm-up Retry Loop
+* **Intent**: Monitoring stack setup & RPC routing stability
+* **Status**: Success (Code, Config & Deployment)
+* **Action**: Updated Envoy load balancer gRPC route matchers and added warm-up retry limits to signal generator runners.
+* **Root Cause Analysis (RCA)**:
+  1. `StatusCode.UNIMPLEMENTED` on `GetHistoricalBars`: Envoy route matcher in `tick-lb/envoy.yaml` used exact path match `path: "/trading.connection.MarketDataService/StreamMarketData"`, causing Envoy to reject `GetHistoricalBars` unary RPC calls with `UNIMPLEMENTED`.
+  2. 300-Second Stream Timeout: Envoy `idle_timeout` was set to `300s`, forcing TCP stream disconnections during quiet market periods.
+  3. Infinite Warm-up Retry Loop: `signal-generator` executed warm-up RPC calls on every stream reconnection without a retry limit or state flag.
+* **Fix Applied**:
+  1. Updated `tick-lb/envoy.yaml` route matcher to `prefix: "/trading.connection.MarketDataService/"` and set `idle_timeout: 0s`.
+  2. Updated `signal-generator/main.py` with `is_warmed_up` state flag and `max_warmup_retries = 3` to limit failed warm-up retries on stream reconnects.
+  3. Synchronized files to remote host via MCP `sync_project_files` and redeployed compose stack via MCP `deploy_compose_stack`.
+
+### [2026-09-01T01:26:00+05:30] Success Op - Resolve Connection Manager Auto-Create Topic & Stream Client Failures
+* **Intent**: Gateway service stability & Kafka topic auto-creation
+* **Status**: Success (Code, Config & Deployment)
+* **Action**: Configured default `KAFKA_AUTO_CREATE_TOPICS=true`, corrected attribute references in `AlpacaStreamClient`, and added explicit startup failure logging.
+* **Root Cause Analysis (RCA)**:
+  1. Kafka Topic Verification Failure: `KafkaEventPublisher` attempted to verify `raw-order-updates` topic existence on startup. Since `KAFKA_AUTO_CREATE_TOPICS` was not set in the container environment, `config.py` defaulted it to `false`, causing `_ensure_topic_exists()` to throw `ValueError` and crash the container during lifespan initialization.
+  2. Attribute Mismatch in Stream Client: `AlpacaStreamClient` referenced non-existent `self.data_stream` instead of `self.stock_stream` during task scheduling, raising `AttributeError` on start/stop.
+* **Fix Applied**:
+  1. Updated `connection-manager-alpaca/config.py` to default `KAFKA_AUTO_CREATE_TOPICS` to `true`.
+  2. Fixed attribute references in `connection-manager-alpaca/alpaca_client.py` from `self.data_stream` to `self.stock_stream`.
+  3. Wrapped `start_services()` in `connection-manager-alpaca/main.py` with explicit exception logging (`logger.critical(..., exc_info=True)`).
+  4. Synchronized code files to remote host via MCP `sync_project_files` and redeployed compose stack via MCP `deploy_compose_stack`.
+  5. Verified `connection-manager-alpaca` status `running`, Websocket connections established to Alpaca IEX & Paper streams, and gRPC subscriber `signal-gen-aapl` successfully consuming stream ticks.
+
+### [2026-09-02T21:55:00+05:30] Success Op - Split Process CPU/Memory Panels & Deploy Full Dashboard Hierarchy
+* **Intent**: Observability dashboard optimization & provisioning directory repair
+* **Status**: Success (Code, Config & Remote Deployment)
+* **Action**: Split combined CPU/Memory Panel into separate CPU % and Memory MB panels, rebalanced grid layout across 3 rows, organized 5 loose dashboard files into `system/` and `component_level_metrics/` provider paths, and deployed remotely via MCP.
+* **Root Cause Analysis (RCA)**:
+  1. Multi-metric Scaling Distortion: Plotting CPU % (0-100%) and RAM MB (150-1024MB) on a single Y-axis caused CPU fluctuations to flatten at the bottom of the chart.
+  2. Missing Dashboards in Grafana UI: 5 dashboard JSON files (`pipeline_flow_metrics.json`, `performance_metrics.json`, `kafka_metrics.json`, `postgresql_metrics.json`, `redis_metrics.json`) were sitting loosely in the parent `dashboards/` directory while Grafana provisioning (`dashboards.yaml`) explicitly watched subdirectories `system/` and `component_level_metrics/`.
+* **Fix Applied**:
+  1. Updated `connection_manager_metrics.json` (both root and component-level definitions) to split Panel 7 into Panel 7 (`7. Process CPU Utilization (%)`) and Panel 8 (`8. Process Memory Consumption (MB)`) with half-width grid positioning (`w: 12`).
+  2. Organized all 8 dashboard JSON files into their respective provider subfolders (`dashboards/system/` and `dashboards/component_level_metrics/`).
+  3. Synchronized all 6 updated dashboard and provisioning files to the remote Docker host via MCP `sync_project_files`.
+  4. Restarted the `grafana` container via MCP `restart_docker_container`. Confirmed successful container startup and dashboard auto-discovery in Grafana logs.

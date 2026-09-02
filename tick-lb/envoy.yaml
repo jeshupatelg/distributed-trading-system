@@ -34,11 +34,11 @@ static_resources:
               routes:
               # Route Market Data streams to connection-manager-alpaca gateway
               - match:
-                  path: "/trading.connection.MarketDataService/StreamMarketData"
+                  prefix: "/trading.connection.MarketDataService/"
                 route:
                   cluster: connection-manager-alpaca
                   timeout: 0s
-                  idle_timeout: 300s
+                  idle_timeout: 0s
               # Route Order Execution calls to connection-manager-alpaca gateway
               - match:
                   prefix: "/trading.connection.OrderExecutionService/"
@@ -51,8 +51,8 @@ static_resources:
 
   clusters:
   - name: connection-manager-alpaca
-    connect_timeout: 0.25s
-    type: STRICT_DNS
+    connect_timeout: 5s
+    type: LOGICAL_DNS
     lb_policy: ROUND_ROBIN
     typed_extension_protocol_options:
       envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
@@ -65,12 +65,6 @@ static_resources:
         max_connections: 8192
         max_requests: 65536
         max_pending_requests: 8192
-    health_checks:
-    - timeout: 1s
-      interval: 5s
-      unhealthy_threshold: 3
-      healthy_threshold: 2
-      grpc_health_check: {}
     load_assignment:
       cluster_name: connection-manager-alpaca
       endpoints:

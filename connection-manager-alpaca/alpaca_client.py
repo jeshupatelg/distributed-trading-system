@@ -220,7 +220,7 @@ class AlpacaStreamClient:
         from alpaca.data.enums import DataFeed
 
         feed_enum = (
-            DataFeed.SIP if config.ALPACA_DATA_FEED == "sip" else DataFeed.IEX
+            DataFeed.SIP if getattr(config, "ALPACA_DATA_FEED", "iex").lower() == "sip" else DataFeed.IEX
         )
 
         self.data_stream = StockDataStream(
@@ -251,10 +251,11 @@ class AlpacaStreamClient:
         """
         logger.debug("Live bar received: %s", bar)
         import telemetry
-        telemetry.TICKS_RECEIVED.labels(ticker=bar.symbol).inc()
-        telemetry.TICKS_BROADCASTED.labels(ticker=bar.symbol).inc()
-        if self.grpc_broadcaster:
-            await self.grpc_broadcaster.broadcast_bar(bar)
+        with telemetry.TICK_PROCESSING_DURATION.labels(ticker=bar.symbol).time():
+            telemetry.TICKS_RECEIVED.labels(ticker=bar.symbol).inc()
+            telemetry.TICKS_BROADCASTED.labels(ticker=bar.symbol).inc()
+            if self.grpc_broadcaster:
+                await self.grpc_broadcaster.broadcast_bar(bar)
 
     async def _trade_update_handler(self, trade_update):
         """
@@ -284,7 +285,7 @@ class AlpacaStreamClient:
 
         # Subscribe to bars
         if config.TICKERS_TO_TRACK:
-            self.data_stream.subscribe_bars(
+            self.stock_stream.subscribe_bars(
                 self._bar_handler, *config.TICKERS_TO_TRACK
             )
             logger.info("Subscribed to bars for tickers: %s", config.TICKERS_TO_TRACK)
@@ -294,7 +295,7 @@ class AlpacaStreamClient:
         logger.info("Subscribed to trading stream updates.")
 
         loop = asyncio.get_running_loop()
-        self._tasks.append(loop.create_task(self.data_stream._run_forever()))
+        self._tasks.append(loop.create_task(self.stock_stream._run_forever()))
         self._tasks.append(loop.create_task(self.trading_stream._run_forever()))
         logger.info("Started Alpaca streaming tasks in active event loop.")
 
@@ -304,7 +305,7 @@ class AlpacaStreamClient:
         logger.info("Stopping Alpaca streaming connections...")
 
         try:
-            await self.data_stream.stop()
+            await self.stock_stream.stop()
         except Exception as e:
             logger.error("Error stopping data stream: %s", e)
 

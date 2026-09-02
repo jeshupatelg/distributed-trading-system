@@ -70,6 +70,9 @@ async def consume_market_data(strategy: BaseStrategy, publisher: KafkaSignalPubl
     """
     logger.info(f"Starting market data consumer task for ticker {config.TICKER}...")
     retry_delay = 5.0
+    warmup_attempts = 0
+    max_warmup_retries = getattr(config, "MAX_WARMUP_RETRIES", 3)
+    is_warmed_up = False
     
     while True:
         try:
@@ -77,41 +80,57 @@ async def consume_market_data(strategy: BaseStrategy, publisher: KafkaSignalPubl
             async with grpc.aio.insecure_channel(config.CONNECTION_MANAGER_ENDPOINT) as channel:
                 # Use MarketDataServiceStub instead of ConnectionManagerServiceStub
                 stub = connection_manager_pb2_grpc.MarketDataServiceStub(channel)
-                # 1. Warm-up Phase: Query GetHistoricalBars via Envoy Load Balancer
-                # Determine limit size dynamically from strategy parameters (e.g. slow_period or period)
-                warmup_limit = max(
-                    config.STRATEGY_PARAMS.get("slow_period", 0),
-                    config.STRATEGY_PARAMS.get("period", 0),
-                    30
-                ) + 5
-                
                 metadata = (("x-ticker", config.TICKER),)
-                logger.info(f"Warming up strategy {config.STRATEGY_CLASS_NAME} with {warmup_limit} historical bars...")
-                try:
-                    hist_req = connection_manager_pb2.HistoricalBarsRequest(
-                        symbol=config.TICKER,
-                        limit=warmup_limit
-                    )
-                    hist_response = await stub.GetHistoricalBars(hist_req, metadata=metadata, timeout=10.0)
+
+                # 1. Warm-up Phase: Query GetHistoricalBars (only if not yet warmed up and retries remain)
+                if not is_warmed_up and warmup_attempts < max_warmup_retries:
+                    warmup_limit = max(
+                        config.STRATEGY_PARAMS.get("slow_period", 0),
+                        config.STRATEGY_PARAMS.get("period", 0),
+                        30
+                    ) + 5
                     
-                    # Feed bars to strategy to pre-populate indicator deques, suppressing signal publishing
-                    warmed_count = 0
-                    for bar_proto in hist_response.bars:
-                        bar_dict = {
-                            "symbol": bar_proto.symbol,
-                            "open": bar_proto.open,
-                            "high": bar_proto.high,
-                            "low": bar_proto.low,
-                            "close": bar_proto.close,
-                            "volume": bar_proto.volume,
-                            "timestamp": bar_proto.timestamp,
-                            "provider": bar_proto.provider
-                        }
-                        strategy.on_bar(bar_dict)
-                        warmed_count += 1
-                    logger.info(f"Warm-up complete. Pre-populated strategy cache with {warmed_count} bars.")
-                except Exception as ex:
-                    logger.warning(f"Strategy warm-up failed: {ex}. Proceeding with cold start...")
+                    warmup_attempts += 1
+                    logger.info(
+                        f"Warming up strategy {config.STRATEGY_CLASS_NAME} with {warmup_limit} historical bars "
+                        f"(Attempt {warmup_attempts}/{max_warmup_retries})..."
+                    )
+                    try:
+                        hist_req = connection_manager_pb2.HistoricalBarsRequest(
+                            symbol=config.TICKER,
+                            limit=warmup_limit
+                        )
+                        hist_response = await stub.GetHistoricalBars(hist_req, metadata=metadata, timeout=10.0)
+                        
+                        # Feed bars to strategy to pre-populate indicator deques, suppressing signal publishing
+                        warmed_count = 0
+                        for bar_proto in hist_response.bars:
+                            bar_dict = {
+                                "symbol": bar_proto.symbol,
+                                "open": bar_proto.open,
+                                "high": bar_proto.high,
+                                "low": bar_proto.low,
+                                "close": bar_proto.close,
+                                "volume": bar_proto.volume,
+                                "timestamp": bar_proto.timestamp,
+                                "provider": bar_proto.provider
+                            }
+                            strategy.on_bar(bar_dict)
+                            warmed_count += 1
+                        logger.info(f"Warm-up complete. Pre-populated strategy cache with {warmed_count} bars.")
+                        is_warmed_up = True
+                    except Exception as ex:
+                        if warmup_attempts >= max_warmup_retries:
+                            logger.warning(
+                                f"Strategy warm-up failed ({ex}) after {max_warmup_retries} attempts. "
+                                f"Proceeding permanently with cold start..."
+                            )
+                            is_warmed_up = True  # Prevent infinite warm-up retries on stream reconnections
+                        else:
+                            logger.warning(
+                                f"Strategy warm-up failed: {ex}. "
+                                f"Will retry warm-up on next connection attempt ({warmup_attempts}/{max_warmup_retries})..."
+                            )
 
                 # 2. Live Streaming Phase: Subscribe to StreamMarketData
                 req = connection_manager_pb2.MarketDataRequest(symbols=[config.TICKER])

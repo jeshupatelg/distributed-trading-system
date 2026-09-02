@@ -176,7 +176,7 @@
       }
     },
     {
-      "title": "5. Trade Update Rate (Kafka Fills & Orders)",
+      "title": "5. Tick Processing Latency (p95 / p99)",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -189,6 +189,53 @@
         "y": 9
       },
       "id": 5,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le, ticker) (rate(connection_manager_tick_processing_duration_seconds_bucket{instance=~\"${provider}\"}[5m]))) * 1000",
+          "legendFormat": "p95 {{ticker}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum by (le, ticker) (rate(connection_manager_tick_processing_duration_seconds_bucket{instance=~\"${provider}\"}[5m]))) * 1000",
+          "legendFormat": "p99 {{ticker}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          },
+          "unit": "ms"
+        }
+      }
+    },
+    {
+      "title": "6. Order Updates Received",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 9
+      },
+      "id": 6,
       "targets": [
         {
           "datasource": {
@@ -213,7 +260,7 @@
       }
     },
     {
-      "title": "6. Process CPU & Memory Utilization",
+      "title": "7. Process CPU Utilization (%)",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
@@ -221,11 +268,11 @@
       },
       "gridPos": {
         "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 9
+        "w": 12,
+        "x": 0,
+        "y": 16
       },
-      "id": 6,
+      "id": 7,
       "targets": [
         {
           "datasource": {
@@ -236,7 +283,34 @@
           "expr": "rate(process_cpu_seconds_total{instance=~\"${provider}\"}[1m]) * 100",
           "legendFormat": "CPU %",
           "refId": "A"
-        },
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          },
+          "unit": "percent"
+        }
+      }
+    },
+    {
+      "title": "8. Process Memory Consumption (MB)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "id": 8,
+      "targets": [
         {
           "datasource": {
             "type": "prometheus",
@@ -245,9 +319,19 @@
           "editorMode": "code",
           "expr": "process_resident_memory_bytes{instance=~\"${provider}\"} / (1024 * 1024)",
           "legendFormat": "RAM (MB)",
-          "refId": "B"
+          "refId": "A"
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 15
+          },
+          "unit": "mbytes"
+        }
+      }
     }
   ],
   "refresh": "5s",
@@ -295,5 +379,5 @@
   "timezone": "browser",
   "title": "Connection Manager Metrics",
   "uid": "connection_manager_metrics",
-  "version": 3
+  "version": 4
 }
