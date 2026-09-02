@@ -43,7 +43,7 @@
             "uid": "Prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (ticker) (rate(connection_manager_ticks_received_total{instance=~\"${provider}\"}[1m]))",
+          "expr": "sum by (ticker) (rate(connection_manager_ticks_received_total{instance=~\"${provider}\"}[5m]))",
           "legendFormat": "Ingested {{ticker}}",
           "refId": "A"
         }
@@ -80,7 +80,7 @@
             "uid": "Prometheus"
           },
           "editorMode": "code",
-          "expr": "sum by (ticker) (rate(connection_manager_ticks_broadcasted_total{instance=~\"${provider}\"}[1m]))",
+          "expr": "sum by (ticker) (rate(connection_manager_ticks_broadcasted_total{instance=~\"${provider}\"}[5m]))",
           "legendFormat": "Broadcast {{ticker}}",
           "refId": "A"
         }
