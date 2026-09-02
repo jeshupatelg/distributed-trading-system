@@ -23,6 +23,77 @@
       "repeat": "provider"
     },
     {
+      "title": "0. Broker Connection Liveness Status",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      },
+      "id": 0,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "editorMode": "code",
+          "expr": "connection_manager_broker_connected{instance=~\"${provider}\"}",
+          "legendFormat": "{{stream_type}} stream",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DISCONNECTED",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "CONNECTED",
+                  "color": "green"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "orientation": "horizontal",
+        "textMode": "auto",
+        "colorMode": "background"
+      }
+    },
+    {
       "title": "1. Ticks Received / Sec (Ingest Rate)",
       "type": "timeseries",
       "datasource": {
@@ -33,7 +104,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 1
+        "y": 5
       },
       "id": 1,
       "targets": [
@@ -70,7 +141,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 1
+        "y": 5
       },
       "id": 2,
       "targets": [
@@ -107,7 +178,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 1
+        "y": 5
       },
       "id": 3,
       "targets": [
@@ -144,7 +215,7 @@
         "h": 7,
         "w": 8,
         "x": 0,
-        "y": 9
+        "y": 13
       },
       "id": 4,
       "targets": [
@@ -186,7 +257,7 @@
         "h": 7,
         "w": 8,
         "x": 8,
-        "y": 9
+        "y": 13
       },
       "id": 5,
       "targets": [
@@ -233,7 +304,7 @@
         "h": 7,
         "w": 8,
         "x": 16,
-        "y": 9
+        "y": 13
       },
       "id": 6,
       "targets": [
@@ -270,7 +341,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 16
+        "y": 20
       },
       "id": 7,
       "targets": [
@@ -307,7 +378,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 16
+        "y": 20
       },
       "id": 8,
       "targets": [

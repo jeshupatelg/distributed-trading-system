@@ -19,6 +19,7 @@ We needed an architectural pattern that allows:
 2. **Row-Level Replication (`type: "row"`, `repeat: "provider"`)**:
    * Configured a Grafana Row Panel with `title: "Provider Gateway: ${provider}"` and set `repeat: "provider"`.
    * Enclosed a standardized multi-panel template beneath this row containing:
+     - **Panel 0**: Broker Connection Liveness Status (`CONNECTED` / `DISCONNECTED`)
      - **Panel 1**: Ingest Rate (`Ticks Received / Sec`)
      - **Panel 2**: Egress Rate (`Ticks Broadcast / Sec`)
      - **Panel 3**: Drop Rate (`Ticks Lost / Sec`)

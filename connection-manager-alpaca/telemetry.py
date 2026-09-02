@@ -1,5 +1,11 @@
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter, Histogram, Gauge
 import config
+
+BROKER_CONNECTED = Gauge(
+    "connection_manager_broker_connected",
+    "Boolean status indicating whether connection manager is connected to broker stream (1 = connected, 0 = disconnected)",
+    ["stream_type"]
+)
 
 TICKS_RECEIVED = Counter(
     "connection_manager_ticks_received_total",
@@ -33,6 +39,9 @@ TRADE_UPDATES_PUBLISHED = Counter(
 )
 
 # Pre-initialize metric sample lines so Prometheus exports them immediately with value 0.0 at boot
+BROKER_CONNECTED.labels(stream_type="data").set(0)
+BROKER_CONNECTED.labels(stream_type="trading").set(0)
+
 if hasattr(config, "TICKERS_TO_TRACK") and config.TICKERS_TO_TRACK:
     for ticker_symbol in config.TICKERS_TO_TRACK:
         TICKS_RECEIVED.labels(ticker=ticker_symbol).inc(0)

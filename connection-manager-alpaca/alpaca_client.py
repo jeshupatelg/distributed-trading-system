@@ -251,6 +251,7 @@ class AlpacaStreamClient:
         """
         logger.debug("Live bar received: %s", bar)
         import telemetry
+        telemetry.BROKER_CONNECTED.labels(stream_type="data").set(1)
         with telemetry.TICK_PROCESSING_DURATION.labels(ticker=bar.symbol).time():
             telemetry.TICKS_RECEIVED.labels(ticker=bar.symbol).inc()
             telemetry.TICKS_BROADCASTED.labels(ticker=bar.symbol).inc()
@@ -270,6 +271,7 @@ class AlpacaStreamClient:
             trade_update.order.id,
         )
         import telemetry
+        telemetry.BROKER_CONNECTED.labels(stream_type="trading").set(1)
         telemetry.TRADE_UPDATES_PUBLISHED.labels(event=trade_update.event).inc()
         if hasattr(trade_update, "model_dump"):
             data = trade_update.model_dump()
@@ -294,6 +296,10 @@ class AlpacaStreamClient:
         self.trading_stream.subscribe_trade_updates(self._trade_update_handler)
         logger.info("Subscribed to trading stream updates.")
 
+        import telemetry
+        telemetry.BROKER_CONNECTED.labels(stream_type="data").set(1)
+        telemetry.BROKER_CONNECTED.labels(stream_type="trading").set(1)
+
         loop = asyncio.get_running_loop()
         self._tasks.append(loop.create_task(self.data_stream._run_forever()))
         self._tasks.append(loop.create_task(self.trading_stream._run_forever()))
@@ -303,6 +309,10 @@ class AlpacaStreamClient:
         """Shut down and cancel stream tasks."""
         self._running = False
         logger.info("Stopping Alpaca streaming connections...")
+
+        import telemetry
+        telemetry.BROKER_CONNECTED.labels(stream_type="data").set(0)
+        telemetry.BROKER_CONNECTED.labels(stream_type="trading").set(0)
 
         try:
             await self.data_stream.stop()
