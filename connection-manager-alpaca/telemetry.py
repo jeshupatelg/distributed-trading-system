@@ -39,3 +39,4 @@ if hasattr(config, "TICKERS_TO_TRACK") and config.TICKERS_TO_TRACK:
         TICKS_BROADCASTED.labels(ticker=ticker_symbol).inc(0)
         TICKS_DROPPED.labels(ticker=ticker_symbol, reason="queue_full").inc(0)
         TICKS_DROPPED.labels(ticker=ticker_symbol, reason="dispatch_error").inc(0)
+        TICK_PROCESSING_DURATION.labels(ticker=ticker_symbol).observe(0.0005)
