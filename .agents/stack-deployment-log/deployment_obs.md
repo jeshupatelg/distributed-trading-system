@@ -148,3 +148,16 @@ Deployment run of the Observability (OBS) stack changes for the `distributed-tra
   2. Added `dns_lookup_family: V4_ONLY` under the `connection-manager-alpaca` cluster in `tick-lb/envoy.yaml` to enforce IPv4 DNS resolution within Docker networks.
   3. Synchronized code files to remote host via MCP `sync_project_files` and redeployed compose stack via MCP `deploy_compose_stack`.
   4. Verified `connection-manager-alpaca` healthy startup, gRPC server bound to `0.0.0.0:50051`, and `signal-gen-aapl` / `signal-gen-msft` connected and consuming gRPC market data streams.
+
+### [2026-09-03T01:50:00+05:30] Success Op - Instrument Broker Connection Liveness & Active gRPC Stream Metrics
+* **Intent**: Gateway stream liveness & subscriber tracking
+* **Status**: Success (Code, Config & Deployment)
+* **Action**: Instrumented `connection_manager_broker_connected` and `connection_manager_grpc_active_streams` gauges, provisioned Grafana stat panels, updated component metrics tracking specification, and deployed via outer-loop `git_sync_and_deploy`.
+* **Root Cause Analysis (RCA)**:
+  - Connection manager exported no explicit gauge for WebSocket connection status or active gRPC client streaming subscriptions, leaving downstream dashboard operators blind to broker stream drops or subscriber disconnections.
+* **Fix Applied**:
+  1. Added `BROKER_CONNECTED` (`connection_manager_broker_connected`) Gauge in `telemetry.py` with dimension `stream_type` (`"data"` / `"trading"`).
+  2. Added `GRPC_ACTIVE_STREAMS` (`connection_manager_grpc_active_streams`) Gauge in `telemetry.py` and updated `register_client` / `unregister_client` in `grpc_server.py`.
+  3. Added `0. Broker Connection Liveness Status` and `Active gRPC Downstream Streams` stat panels to `connection_manager_metrics.json`.
+  4. Updated `.agent/component_metrics_tracking.md` readiness matrix to set both metrics to `LIVE`.
+  5. Committed, pushed, and executed outer-loop deployment via MCP `git_sync_and_deploy`. Confirmed healthy metric rendering on `/metrics`.
