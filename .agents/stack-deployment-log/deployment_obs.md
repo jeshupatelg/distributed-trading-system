@@ -11,10 +11,10 @@ Deployment run of the Observability (OBS) stack changes for the `distributed-tra
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Telemetry** | `prometheus` | Observability | **ACTIVE** | Yes (Success) | Dynamic container discovery configured and Docker socket mounted. |
 | **Dashboard UI** | `grafana` | Observability | **ACTIVE** | Yes (Success) | Component-level metrics provisioning folder & repeatable dashboards added. |
-| **Gateway** | `connection-manager-alpaca`| Gateway | **ACTIVE** | Yes (Success) | Ingest (`ticks_received`), broadcast, dropped ticks, and latency telemetry instrumented. |
-| **Load Balancer** | `tick-lb` | Gateway | **ACTIVE** | Yes (Success) | gRPC route prefix `/trading.connection.MarketDataService/` configured. |
-| **Strategy AAPL** | `signal-gen-aapl` | Algorithmic | **ACTIVE** | Yes (Success) | Warm-up state flag & max retries limit instrumented. |
-| **Strategy MSFT** | `signal-gen-msft` | Algorithmic | **ACTIVE** | Yes (Success) | Warm-up state flag & max retries limit instrumented. |
+| **Gateway** | `connection-manager-alpaca`| Gateway | **ACTIVE** | Yes (Success) | Fixed `self.stock_stream` attribute mismatch; WebSocket & gRPC server operational. |
+| **Load Balancer** | `tick-lb` | Gateway | **ACTIVE** | Yes (Success) | Added `dns_lookup_family: V4_ONLY` for IPv4 upstream cluster routing. |
+| **Strategy AAPL** | `signal-gen-aapl` | Algorithmic | **ACTIVE** | Yes (Success) | Stream connected and consuming `AAPL` feed cleanly. |
+| **Strategy MSFT** | `signal-gen-msft` | Algorithmic | **ACTIVE** | Yes (Success) | Stream connected and consuming `MSFT` feed cleanly. |
 | **Order Processing** | `order-processing-service`| Order Management| **ACTIVE** | Yes (Success) | Dynamic scrape labels added. |
 | **Order Management** | `order-management-service`| Order Management| **ACTIVE** | Yes (Success) | Dynamic scrape labels added. |
 
@@ -135,3 +135,16 @@ Deployment run of the Observability (OBS) stack changes for the `distributed-tra
   2. Organized all 8 dashboard JSON files into their respective provider subfolders (`dashboards/system/` and `dashboards/component_level_metrics/`).
   3. Synchronized all 6 updated dashboard and provisioning files to the remote Docker host via MCP `sync_project_files`.
   4. Restarted the `grafana` container via MCP `restart_docker_container`. Confirmed successful container startup and dashboard auto-discovery in Grafana logs.
+
+### [2026-09-02T22:35:00+05:30] Success Op - Resolve AlpacaStreamClient Attribute Mismatch & Envoy IPv4 Routing
+* **Intent**: Gateway service stability & gRPC transport routing fix
+* **Status**: Success (Code, Config & Deployment)
+* **Action**: Resolved `AlpacaStreamClient` attribute reference mismatch and configured explicit IPv4 DNS lookup family in Envoy upstream cluster configuration.
+* **Root Cause Analysis (RCA)**:
+  1. `connection-manager-alpaca` startup crash: `AlpacaStreamClient` threw `AttributeError: 'AlpacaStreamClient' object has no attribute 'stock_stream'` on application startup because `__init__` instantiated `self.data_stream`, whereas `start()` and `stop()` methods attempted to access `self.stock_stream`.
+  2. `signal-generator` gRPC transport failure: Because `connection-manager-alpaca` failed to start, port `50051` was closed. Envoy (`tick-lb`) returned `delayed connect error: 113` (EHOSTUNREACH) / `111` (ECONNREFUSED) to `signal-gen-aapl` and `signal-gen-msft`.
+* **Fix Applied**:
+  1. Fixed attribute references in `connection-manager-alpaca/alpaca_client.py` (`self.stock_stream` $\rightarrow$ `self.data_stream`).
+  2. Added `dns_lookup_family: V4_ONLY` under the `connection-manager-alpaca` cluster in `tick-lb/envoy.yaml` to enforce IPv4 DNS resolution within Docker networks.
+  3. Synchronized code files to remote host via MCP `sync_project_files` and redeployed compose stack via MCP `deploy_compose_stack`.
+  4. Verified `connection-manager-alpaca` healthy startup, gRPC server bound to `0.0.0.0:50051`, and `signal-gen-aapl` / `signal-gen-msft` connected and consuming gRPC market data streams.

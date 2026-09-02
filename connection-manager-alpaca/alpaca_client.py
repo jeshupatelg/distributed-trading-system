@@ -285,7 +285,7 @@ class AlpacaStreamClient:
 
         # Subscribe to bars
         if config.TICKERS_TO_TRACK:
-            self.stock_stream.subscribe_bars(
+            self.data_stream.subscribe_bars(
                 self._bar_handler, *config.TICKERS_TO_TRACK
             )
             logger.info("Subscribed to bars for tickers: %s", config.TICKERS_TO_TRACK)
@@ -295,7 +295,7 @@ class AlpacaStreamClient:
         logger.info("Subscribed to trading stream updates.")
 
         loop = asyncio.get_running_loop()
-        self._tasks.append(loop.create_task(self.stock_stream._run_forever()))
+        self._tasks.append(loop.create_task(self.data_stream._run_forever()))
         self._tasks.append(loop.create_task(self.trading_stream._run_forever()))
         logger.info("Started Alpaca streaming tasks in active event loop.")
 
@@ -305,7 +305,7 @@ class AlpacaStreamClient:
         logger.info("Stopping Alpaca streaming connections...")
 
         try:
-            await self.stock_stream.stop()
+            await self.data_stream.stop()
         except Exception as e:
             logger.error("Error stopping data stream: %s", e)
 
