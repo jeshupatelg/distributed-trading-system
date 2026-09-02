@@ -7,6 +7,11 @@ BROKER_CONNECTED = Gauge(
     ["stream_type"]
 )
 
+GRPC_ACTIVE_STREAMS = Gauge(
+    "connection_manager_grpc_active_streams",
+    "Current number of active downstream gRPC streaming clients connected to MarketDataService"
+)
+
 TICKS_RECEIVED = Counter(
     "connection_manager_ticks_received_total",
     "Total number of market data price ticks received from broker stream",
@@ -41,6 +46,7 @@ TRADE_UPDATES_PUBLISHED = Counter(
 # Pre-initialize metric sample lines so Prometheus exports them immediately with value 0.0 at boot
 BROKER_CONNECTED.labels(stream_type="data").set(0)
 BROKER_CONNECTED.labels(stream_type="trading").set(0)
+GRPC_ACTIVE_STREAMS.set(0)
 
 if hasattr(config, "TICKERS_TO_TRACK") and config.TICKERS_TO_TRACK:
     for ticker_symbol in config.TICKERS_TO_TRACK:

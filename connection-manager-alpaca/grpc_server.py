@@ -45,6 +45,11 @@ class gRPCStreamBroadcaster:
         queue = asyncio.Queue(maxsize=max_queue_size)
         self.active_queues[queue] = set(symbols)
         logger.info("Registered new gRPC client queue for symbols: %s", symbols)
+        try:
+            import telemetry
+            telemetry.GRPC_ACTIVE_STREAMS.set(len(self.active_queues))
+        except Exception as e:
+            logger.debug("Failed to set GRPC_ACTIVE_STREAMS metric: %s", e)
         return queue
 
     def unregister_client(self, queue: asyncio.Queue):
@@ -57,6 +62,11 @@ class gRPCStreamBroadcaster:
         if queue in self.active_queues:
             del self.active_queues[queue]
             logger.info("Unregistered gRPC client queue.")
+            try:
+                import telemetry
+                telemetry.GRPC_ACTIVE_STREAMS.set(len(self.active_queues))
+            except Exception as e:
+                logger.debug("Failed to set GRPC_ACTIVE_STREAMS metric: %s", e)
 
     async def broadcast_bar(self, bar):
         """
