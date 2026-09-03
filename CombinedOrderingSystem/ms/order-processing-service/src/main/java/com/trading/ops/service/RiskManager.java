@@ -51,7 +51,7 @@ public class RiskManager {
         this.redisTemplate = redisTemplate;
     }
 
-    public record RiskDecision(boolean approved, String reason, double calculatedCost, double stopLossPrice) {}
+    public record RiskDecision(boolean approved, String reason, String riskGateLevel, double calculatedCost, double stopLossPrice) {}
 
     /**
      * Executes the comprehensive Phase 1 Pre-Trade Risk Firewall evaluation.
@@ -63,7 +63,7 @@ public class RiskManager {
         String killSwitch = redisTemplate.opsForValue().get(KILL_SWITCH_KEY);
         if ("true".equalsIgnoreCase(killSwitch)) {
             log.warn("RISK REJECTED: Global Emergency Kill Switch is ACTIVE. Dropping order {} for {}", orderId, symbol);
-            return new RiskDecision(false, "GLOBAL_KILL_SWITCH_ACTIVE", estimatedCost, 0.0);
+            return new RiskDecision(false, "GLOBAL_KILL_SWITCH_ACTIVE", "KILL_SWITCH", estimatedCost, 0.0);
         }
 
         // Initialize / restore account cache in Redis if needed
@@ -80,7 +80,7 @@ public class RiskManager {
 
         if (dailyDrawdown > maxDailyLoss) {
             log.warn("RISK REJECTED: Daily Loss Gate tripped! Drawdown: ${} > Max Allowed: ${}", dailyDrawdown, maxDailyLoss);
-            return new RiskDecision(false, "DAILY_LOSS_LIMIT_EXCEEDED (Drawdown: " + String.format("%.2f", dailyDrawdown) + " > " + maxDailyLoss + ")", estimatedCost, 0.0);
+            return new RiskDecision(false, "DAILY_LOSS_LIMIT_EXCEEDED (Drawdown: " + String.format("%.2f", dailyDrawdown) + " > " + maxDailyLoss + ")", "DAILY_LOSS_GATE", estimatedCost, 0.0);
         }
 
         // 3. Fat-Finger & Price Collar Sanity Check (±1.5% default deviation)
@@ -94,7 +94,7 @@ public class RiskManager {
                 if (deviation > collarPct) {
                     log.warn("RISK REJECTED: Price collar violation for {}! Price: {}, Ref: {}, Dev: {}% > Max: {}%",
                             symbol, price, refPrice, String.format("%.2f", deviation), collarPct);
-                    return new RiskDecision(false, "PRICE_COLLAR_VIOLATION (" + String.format("%.2f", deviation) + "% > " + collarPct + "%)", estimatedCost, 0.0);
+                    return new RiskDecision(false, "PRICE_COLLAR_VIOLATION (" + String.format("%.2f", deviation) + "% > " + collarPct + "%)", "PRICE_COLLAR", estimatedCost, 0.0);
                 }
             }
         }
@@ -118,12 +118,12 @@ public class RiskManager {
 
         if (symbolCount != null && symbolCount > maxSecVelocity) {
             log.warn("RISK REJECTED: Velocity limit exceeded for symbol {}! Count: {}/sec > Max: {}", symbol, symbolCount, maxSecVelocity);
-            return new RiskDecision(false, "SYMBOL_VELOCITY_LIMIT_EXCEEDED (" + symbolCount + "/sec > " + maxSecVelocity + ")", estimatedCost, 0.0);
+            return new RiskDecision(false, "SYMBOL_VELOCITY_LIMIT_EXCEEDED (" + symbolCount + "/sec > " + maxSecVelocity + ")", "VELOCITY_THROTTLER", estimatedCost, 0.0);
         }
 
         if (systemCount != null && systemCount > maxMinVelocity) {
             log.warn("RISK REJECTED: System-wide velocity limit exceeded! Count: {}/min > Max: {}", systemCount, maxMinVelocity);
-            return new RiskDecision(false, "SYSTEM_VELOCITY_LIMIT_EXCEEDED (" + systemCount + "/min > " + maxMinVelocity + ")", estimatedCost, 0.0);
+            return new RiskDecision(false, "SYSTEM_VELOCITY_LIMIT_EXCEEDED (" + systemCount + "/min > " + maxMinVelocity + ")", "VELOCITY_THROTTLER", estimatedCost, 0.0);
         }
 
         // 5. Max Position Sizing & Concentration Gate
@@ -133,12 +133,12 @@ public class RiskManager {
 
         if (qty > maxOrderQty) {
             log.warn("RISK REJECTED: Max order quantity exceeded! Qty: {} > Max: {}", qty, maxOrderQty);
-            return new RiskDecision(false, "MAX_ORDER_QTY_EXCEEDED (" + qty + " > " + maxOrderQty + ")", estimatedCost, 0.0);
+            return new RiskDecision(false, "MAX_ORDER_QTY_EXCEEDED (" + qty + " > " + maxOrderQty + ")", "MAX_ORDER_QTY", estimatedCost, 0.0);
         }
 
         if (estimatedCost > maxOrderVal) {
             log.warn("RISK REJECTED: Max order value exceeded! Value: ${} > Max: ${}", estimatedCost, maxOrderVal);
-            return new RiskDecision(false, "MAX_ORDER_VALUE_EXCEEDED ($" + estimatedCost + " > $" + maxOrderVal + ")", estimatedCost, 0.0);
+            return new RiskDecision(false, "MAX_ORDER_VALUE_EXCEEDED ($" + estimatedCost + " > $" + maxOrderVal + ")", "MAX_ORDER_VALUE", estimatedCost, 0.0);
         }
 
         if ("BUY".equalsIgnoreCase(side)) {
@@ -151,7 +151,7 @@ public class RiskManager {
             if (projectedSymbolVal > maxAllowedSymbolVal) {
                 log.warn("RISK REJECTED: Concentration limit exceeded for {}! Projected: ${} > Max Allowed ({}%): ${}",
                         symbol, projectedSymbolVal, maxConcentrationPct, maxAllowedSymbolVal);
-                return new RiskDecision(false, "MAX_CONCENTRATION_EXCEEDED (Projected: $" + String.format("%.2f", projectedSymbolVal) + " > Limit: $" + String.format("%.2f", maxAllowedSymbolVal) + ")", estimatedCost, 0.0);
+                return new RiskDecision(false, "MAX_CONCENTRATION_EXCEEDED (Projected: $" + String.format("%.2f", projectedSymbolVal) + " > Limit: $" + String.format("%.2f", maxAllowedSymbolVal) + ")", "PORTFOLIO_CONCENTRATION", estimatedCost, 0.0);
             }
         }
 
@@ -159,7 +159,7 @@ public class RiskManager {
         double availableMargin = currentCash - blockedMargin;
         if (availableMargin < estimatedCost) {
             log.warn("RISK REJECTED: Insufficient cash margin. Required: ${}, Available: ${}", estimatedCost, availableMargin);
-            return new RiskDecision(false, "INSUFFICIENT_MARGIN (Required: $" + estimatedCost + " > Available: $" + availableMargin + ")", estimatedCost, 0.0);
+            return new RiskDecision(false, "INSUFFICIENT_MARGIN (Required: $" + estimatedCost + " > Available: $" + availableMargin + ")", "INSUFFICIENT_MARGIN", estimatedCost, 0.0);
         }
 
         // Lock margin & mark order as pending in Redis
@@ -176,7 +176,7 @@ public class RiskManager {
         }
 
         log.info("Risk checks PASSED for order {}. Margin locked: ${}, Stop Loss Price: ${}", orderId, estimatedCost, String.format("%.2f", stopLossPrice));
-        return new RiskDecision(true, "APPROVED", estimatedCost, stopLossPrice);
+        return new RiskDecision(true, "APPROVED", "NONE", estimatedCost, stopLossPrice);
     }
 
     /**

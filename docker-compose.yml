@@ -212,6 +212,44 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  # Notification Service (Multi-Channel Dispatcher)
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    container_name: notification-service
+    ports:
+      - "8085:8085"
+    labels:
+      application: "distributed-trading"
+      prometheus.scrape: "true"
+      prometheus.port: "8085"
+      prometheus.path: "/health"
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_GROUP_ID=notification-service-group
+      - TOPIC_ORDER_REJECT=order-reject-events
+      - TOPIC_ORDER_CREATE=order-create-events
+      - TOPIC_ORDER_COMPLETE=order-complete-events
+      - REDIS_HOST=host.docker.internal
+      - REDIS_PORT=6379
+      - EVOLUTION_API_URL=${EVOLUTION_API_URL:-http://192.168.29.96:3015}
+      - EVOLUTION_API_KEY=${EVOLUTION_API_KEY:-}
+      - EVOLUTION_INSTANCE=${EVOLUTION_INSTANCE:-}
+      - EVOLUTION_RECIPIENT=${EVOLUTION_RECIPIENT:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - NTFY_URL=${NTFY_URL:-https://ntfy.sh}
+      - NTFY_TOPIC=${NTFY_TOPIC:-trading-system-alerts}
+    networks:
+      - default
+      - gateway_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - kafka
+      - order-processing-service
+
   # Prometheus Telemetry Collector
   prometheus:
     image: prom/prometheus:latest

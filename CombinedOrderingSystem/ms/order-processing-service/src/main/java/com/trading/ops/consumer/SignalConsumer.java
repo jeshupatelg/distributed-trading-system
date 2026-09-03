@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trading.connection.grpc.OrderRequest;
 import com.trading.connection.grpc.OrderResponse;
 import com.trading.ops.dto.OrderCreateEvent;
+import com.trading.ops.dto.OrderRejectEvent;
 import com.trading.ops.dto.SignalEvent;
 import com.trading.ops.service.OrderExecutionClient;
 import com.trading.ops.service.RiskManager;
@@ -27,6 +28,9 @@ public class SignalConsumer {
 
     @Value("${trading.topics.order-create}")
     private String orderCreateTopic;
+
+    @Value("${trading.topics.order-reject:order-reject-events}")
+    private String orderRejectTopic;
 
     public SignalConsumer(RiskManager riskManager, 
                           OrderExecutionClient executionClient,
@@ -68,7 +72,28 @@ public class SignalConsumer {
             );
 
             if (!decision.approved()) {
-                log.warn("ORDER REJECTED by Pre-Trade Risk Engine. Reason: {}, Signal: {}", decision.reason(), signal);
+                log.warn("ORDER REJECTED by Pre-Trade Risk Engine. Reason: {}, Gate: {}, Signal: {}", 
+                    decision.reason(), decision.riskGateLevel(), signal);
+                try {
+                    OrderRejectEvent rejectEvent = new OrderRejectEvent(
+                        clientOrderId,
+                        signal.symbol(),
+                        signal.qty(),
+                        action,
+                        signal.price(),
+                        decision.calculatedCost(),
+                        provider,
+                        signal.strategy(),
+                        decision.reason(),
+                        decision.riskGateLevel(),
+                        System.currentTimeMillis()
+                    );
+                    String rejectPayload = objectMapper.writeValueAsString(rejectEvent);
+                    kafkaTemplate.send(orderRejectTopic, clientOrderId, rejectPayload);
+                    log.info("Published order-reject-event to Kafka topic '{}' for order ID: {}", orderRejectTopic, clientOrderId);
+                } catch (Exception ex) {
+                    log.error("Failed to publish order-reject-event to Kafka", ex);
+                }
                 return;
             }
 
@@ -115,6 +140,24 @@ public class SignalConsumer {
             } catch (Exception e) {
                 log.error("Order submission failed. Reverting risk margin lock for order ID: {}", clientOrderId, e);
                 riskManager.revertLock(clientOrderId, decision.calculatedCost());
+                try {
+                    OrderRejectEvent rejectEvent = new OrderRejectEvent(
+                        clientOrderId,
+                        signal.symbol(),
+                        signal.qty(),
+                        action,
+                        signal.price(),
+                        decision.calculatedCost(),
+                        provider,
+                        signal.strategy(),
+                        "Broker transmission error: " + e.getMessage(),
+                        "BROKER_ERROR",
+                        System.currentTimeMillis()
+                    );
+                    kafkaTemplate.send(orderRejectTopic, clientOrderId, objectMapper.writeValueAsString(rejectEvent));
+                } catch (Exception ex) {
+                    log.error("Failed to publish broker rejection event", ex);
+                }
             }
 
         } catch (Exception e) {

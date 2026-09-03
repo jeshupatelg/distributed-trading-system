@@ -32,3 +32,29 @@
      - Added interactive form to modify all risk limits in real-time (persisting directly to Redis).
      - Added 1-click **Emergency Global Kill Switch** and **Reset Lockdown** controls.
      - Added currency toggle (₹ INR / $ USD) and Indian broker/exchange compatibility indicators.
+
+## Deployment Action 3: Multi-Channel Notification Microservice (Telegram, ntfy, Evolution API WhatsApp)
+- **Objective**: Implement real-time multi-channel notifications for failed orders (orders rejected by pre-trade risk gates), executed orders, fills, and emergency lockdowns with granular GUI controls.
+- **Root Cause / Need**: Operators previously had no proactive alerting when signals failed risk validation (e.g. fat-finger price collar, velocity throttle, daily drawdown) or when orders executed, requiring manual inspection of logs.
+- **Key Modules Modified & Added**:
+  1. **Order Processing Service (`order-processing-service`)**:
+     - Created `OrderRejectEvent.java` DTO encapsulating rejected order metadata, exact failure reason, risk gate level, and timestamp.
+     - Updated `RiskManager.java` so `RiskDecision` classifies rejections across 8 gate levels (`KILL_SWITCH`, `DAILY_LOSS_GATE`, `PRICE_COLLAR`, `VELOCITY_THROTTLER`, `MAX_ORDER_QTY`, `MAX_ORDER_VALUE`, `PORTFOLIO_CONCENTRATION`, `INSUFFICIENT_MARGIN`).
+     - Updated `SignalConsumer.java` to publish `OrderRejectEvent` to Kafka topic `order-reject-events` on any pre-trade rejection or broker transmission failure.
+     - Added `order-reject` topic configuration to `application.yml`.
+  2. **Notification Microservice (`notification-service`)**:
+     - Created dedicated standalone container listening to Kafka topics (`order-reject-events`, `order-create-events`, `order-complete-events`).
+     - Implemented multi-channel dispatchers:
+       - `channels/evolution_api.py`: WhatsApp messaging via Evolution API v2 (`http://192.168.29.96:3015/`).
+       - `channels/telegram.py`: HTML formatted Telegram Bot alerts.
+       - `channels/ntfy.py`: Push alerts to ntfy server with urgency and tag headers.
+     - Built `formatter.py` template engine providing structured trade details and intuitive explanation statements for every risk gate.
+     - Created `main.py` FastAPI server with health check, status, and test dispatch endpoints.
+     - Built multi-stage `Dockerfile` on port `8085`.
+  3. **Quant Dashboard (`quant-dashboard`)**:
+     - Added dedicated **"Notification Center"** page.
+     - Added granular alert event checkboxes (Risk Rejections, Placements, Fills, Kill Switch).
+     - Added credential & endpoint forms for Evolution API, Telegram, and ntfy with 1-click Redis persistence (`notify:config:*`).
+     - Added live channel test dispatch button.
+  4. **Docker Compose (`docker-compose.yml`)**:
+     - Added `notification-service` container definition on port `8085:8085` joined to `default` (kafka_net) and `gateway_net`.

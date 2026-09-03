@@ -32,6 +32,7 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "read_pass")
 
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 OPS_REST_ENDPOINT = os.getenv("OPS_REST_ENDPOINT", "http://order-processing-service:8081")
+NOTIFICATION_SERVICE_ENDPOINT = os.getenv("NOTIFICATION_SERVICE_ENDPOINT", "http://notification-service:8085")
 
 # Cache connection pools to prevent socket exhaustion
 @st.cache_resource(show_spinner=False)
@@ -107,6 +108,7 @@ page = st.sidebar.radio(
     [
         "System Control Center",
         "Risk Engine & Controls",
+        "Notification Center",
         "Portfolio & Assets",
         "Order History",
         "Provider Status",
@@ -363,6 +365,231 @@ elif page == "Risk Engine & Controls":
                 st.rerun()
             else:
                 st.error("Cannot connect to Redis to save configurations.")
+
+
+# =====================================================================
+# Page: Notification Center (Telegram, ntfy, Evolution WhatsApp)
+# =====================================================================
+elif page == "Notification Center":
+    st.title("🔔 Real-Time Notification Center")
+    st.markdown("Configure multi-channel alerts for **Risk Manager rejections**, order placements, order fills, and emergency events.")
+
+    # Query active configuration from Redis
+    notify_on_reject = True
+    notify_on_create = False
+    notify_on_fill = True
+    notify_on_kill = True
+
+    evo_enabled = False
+    evo_url = "http://192.168.29.96:3015"
+    evo_apikey = ""
+    evo_instance = ""
+    evo_recipient = ""
+
+    tg_enabled = False
+    tg_token = ""
+    tg_chat_id = ""
+
+    ntfy_enabled = False
+    ntfy_url = "https://ntfy.sh"
+    ntfy_topic = "trading-system-alerts"
+
+    if redis_connected:
+        try:
+            notify_on_reject = (r_client.get("notify:config:filter:reject") or "true").lower() in ("true", "1", "yes")
+            notify_on_create = (r_client.get("notify:config:filter:order_create") or "false").lower() in ("true", "1", "yes")
+            notify_on_fill = (r_client.get("notify:config:filter:order_fill") or "true").lower() in ("true", "1", "yes")
+            notify_on_kill = (r_client.get("notify:config:filter:kill_switch") or "true").lower() in ("true", "1", "yes")
+
+            evo_enabled = (r_client.get("notify:config:evolution:enabled") or "false").lower() in ("true", "1", "yes")
+            evo_url = r_client.get("notify:config:evolution:url") or "http://192.168.29.96:3015"
+            evo_apikey = r_client.get("notify:config:evolution:apikey") or ""
+            evo_instance = r_client.get("notify:config:evolution:instance") or ""
+            evo_recipient = r_client.get("notify:config:evolution:recipient") or ""
+
+            tg_enabled = (r_client.get("notify:config:telegram:enabled") or "false").lower() in ("true", "1", "yes")
+            tg_token = r_client.get("notify:config:telegram:token") or ""
+            tg_chat_id = r_client.get("notify:config:telegram:chat_id") or ""
+
+            ntfy_enabled = (r_client.get("notify:config:ntfy:enabled") or "false").lower() in ("true", "1", "yes")
+            ntfy_url = r_client.get("notify:config:ntfy:url") or "https://ntfy.sh"
+            ntfy_topic = r_client.get("notify:config:ntfy:topic") or "trading-system-alerts"
+        except Exception as e:
+            st.error(f"Error querying notification settings from Redis: {e}")
+
+    # Top Status Cards
+    st.subheader("📡 Multi-Channel Delivery Channels")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.write("#### 📱 Evolution API (WhatsApp)")
+        if evo_enabled:
+            st.success("🟢 ENABLED")
+            st.caption(f"**URL:** {evo_url}\n\n**Instance:** {evo_instance or 'Not set'}\n\n**To:** {evo_recipient or 'Not set'}")
+        else:
+            st.warning("⚪ DISABLED")
+            st.caption("WhatsApp message delivery paused.")
+
+    with c2:
+        st.write("#### 📢 Telegram Bot")
+        if tg_enabled:
+            st.success("🟢 ENABLED")
+            st.caption(f"**Chat ID:** {tg_chat_id or 'Not set'}\n\n**Token:** {'Configured' if tg_token else 'Missing'}")
+        else:
+            st.warning("⚪ DISABLED")
+            st.caption("Telegram bot messages paused.")
+
+    with c3:
+        st.write("#### 🔔 ntfy Push Alerts")
+        if ntfy_enabled:
+            st.success("🟢 ENABLED")
+            st.caption(f"**Server:** {ntfy_url}\n\n**Topic:** `{ntfy_topic}`")
+        else:
+            st.warning("⚪ DISABLED")
+            st.caption("ntfy push alerts paused.")
+
+    st.divider()
+
+    # Form to update all settings
+    with st.form("notification_config_form"):
+        st.subheader("🎯 Granular Event Alert Triggers")
+        st.markdown("Select which lifecycle events trigger outgoing notifications:")
+
+        f_col1, f_col2 = st.columns(2)
+        with f_col1:
+            new_notify_reject = st.checkbox(
+                "🚨 Notify on Risk Rejections (Failed Orders)",
+                value=notify_on_reject,
+                help="Sends immediate high-priority alerts with order details, failure reason, and exact risk gate level when an order is blocked."
+            )
+            new_notify_kill = st.checkbox(
+                "⚠️ Notify on Global Kill Switch Actions",
+                value=notify_on_kill,
+                help="Alerts immediately when Emergency Lockdown is activated or cleared."
+            )
+        with f_col2:
+            new_notify_fill = st.checkbox(
+                "✅ Notify on Terminal Order Fills & Settlement",
+                value=notify_on_fill,
+                help="Alerts when an order completes or is filled on the exchange with price and quantity."
+            )
+            new_notify_create = st.checkbox(
+                "🚀 Notify on Working Order Placements",
+                value=notify_on_create,
+                help="Alerts when an order is initially dispatched to the broker gateway."
+            )
+
+        st.divider()
+        st.subheader("⚙️ Channel Credentials & Endpoints")
+
+        # Evolution API WhatsApp Card
+        st.write("### 📱 Evolution API (WhatsApp)")
+        e_col1, e_col2 = st.columns(2)
+        with e_col1:
+            new_evo_enabled = st.checkbox("Enable WhatsApp via Evolution API", value=evo_enabled)
+            new_evo_url = st.text_input("Evolution API Base URL", value=evo_url, help="Base URL where your Evolution API instance is hosted.")
+            new_evo_apikey = st.text_input("Evolution API Key", value=evo_apikey, type="password", help="Global API Key configured in Evolution API.")
+        with e_col2:
+            new_evo_instance = st.text_input("Instance Name", value=evo_instance, placeholder="e.g. trading-bot", help="Active connected WhatsApp instance name in Evolution API.")
+            new_evo_recipient = st.text_input("Recipient Phone Number", value=evo_recipient, placeholder="e.g. 919876543210", help="Target phone number with country code (no + or spaces).")
+
+        st.divider()
+
+        # Telegram Bot Card
+        st.write("### 📢 Telegram Bot")
+        t_col1, t_col2 = st.columns(2)
+        with t_col1:
+            new_tg_enabled = st.checkbox("Enable Telegram Notifications", value=tg_enabled)
+            new_tg_token = st.text_input("Telegram Bot Token", value=tg_token, type="password", placeholder="123456:ABC-DEF...", help="Bot token obtained from @BotFather.")
+        with t_col2:
+            new_tg_chat_id = st.text_input("Telegram Chat / Channel ID", value=tg_chat_id, placeholder="e.g. -1001234567890 or @mychannel", help="Numeric Chat ID or channel username.")
+
+        st.divider()
+
+        # ntfy Card
+        st.write("### 🔔 ntfy Push Notifications")
+        n_col1, n_col2 = st.columns(2)
+        with n_col1:
+            new_ntfy_enabled = st.checkbox("Enable ntfy Push Notifications", value=ntfy_enabled)
+            new_ntfy_url = st.text_input("ntfy Server URL", value=ntfy_url, help="ntfy server (e.g. https://ntfy.sh or self-hosted).")
+        with n_col2:
+            new_ntfy_topic = st.text_input("ntfy Topic Name", value=ntfy_topic, placeholder="e.g. my-trading-alerts", help="Private topic name to subscribe on mobile/desktop.")
+
+        st.divider()
+        save_btn = st.form_submit_button("💾 Save Notification Configurations to Redis", type="primary", use_container_width=True)
+        if save_btn:
+            if redis_connected:
+                # Save filters
+                r_client.set("notify:config:filter:reject", "true" if new_notify_reject else "false")
+                r_client.set("notify:config:filter:kill_switch", "true" if new_notify_kill else "false")
+                r_client.set("notify:config:filter:order_fill", "true" if new_notify_fill else "false")
+                r_client.set("notify:config:filter:order_create", "true" if new_notify_create else "false")
+
+                # Save Evolution API
+                r_client.set("notify:config:evolution:enabled", "true" if new_evo_enabled else "false")
+                r_client.set("notify:config:evolution:url", new_evo_url.strip())
+                if new_evo_apikey:
+                    r_client.set("notify:config:evolution:apikey", new_evo_apikey.strip())
+                r_client.set("notify:config:evolution:instance", new_evo_instance.strip())
+                r_client.set("notify:config:evolution:recipient", new_evo_recipient.strip())
+
+                # Save Telegram
+                r_client.set("notify:config:telegram:enabled", "true" if new_tg_enabled else "false")
+                if new_tg_token:
+                    r_client.set("notify:config:telegram:token", new_tg_token.strip())
+                r_client.set("notify:config:telegram:chat_id", new_tg_chat_id.strip())
+
+                # Save ntfy
+                r_client.set("notify:config:ntfy:enabled", "true" if new_ntfy_enabled else "false")
+                r_client.set("notify:config:ntfy:url", new_ntfy_url.strip())
+                r_client.set("notify:config:ntfy:topic", new_ntfy_topic.strip())
+
+                st.success("✅ Notification configurations saved to Redis successfully! Changes take effect immediately across all dispatchers.")
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error("Cannot connect to Redis to save configurations.")
+
+    st.divider()
+
+    # Test Dispatch Section
+    st.subheader("🧪 Live Channel Delivery Test")
+    st.markdown("Send a simulated **Risk Manager Rejection** or **Order Fill** alert to test channel connectivity.")
+
+    test_col1, test_col2, test_col3 = st.columns([1, 1, 2])
+    with test_col1:
+        test_channel = st.selectbox("Target Channel", ["all", "evolution", "telegram", "ntfy"])
+    with test_col2:
+        test_event = st.selectbox("Event Simulation", ["reject (Failed Order)", "fill (Successful Order)"])
+    with test_col3:
+        st.write("")
+        st.write("")
+        if st.button("📨 Send Test Notification", type="secondary", use_container_width=True):
+            event_type = "reject" if "reject" in test_event else "fill"
+            test_payload = {
+                "channel": test_channel,
+                "event_type": event_type,
+                "symbol": "AAPL",
+                "qty": 100,
+                "price": 260.00,
+                "gate": "PRICE_COLLAR",
+                "reason": "PRICE_COLLAR_VIOLATION (13.04% > 2.0%)"
+            }
+            try:
+                req_data = json.dumps(test_payload).encode("utf-8")
+                req = urllib.request.Request(
+                    f"{NOTIFICATION_SERVICE_ENDPOINT}/api/v1/notify/test",
+                    data=req_data,
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    res_body = json.loads(resp.read().decode())
+                    st.success("✅ Test dispatch triggered!")
+                    st.json(res_body)
+            except urllib.error.URLError as e:
+                st.warning(f"Could not contact Notification Service directly ({e}). If running in standalone mode, check network connectivity.")
+            except Exception as e:
+                st.error(f"Error triggering test notification: {e}")
 
 
 # =====================================================================
