@@ -9,8 +9,9 @@ async def send_ntfy(server_url: str, topic: str, title: str, markdown_body: str,
         return False
 
     url = f"{server_url.rstrip("/")}/{topic}"
+    clean_title = title.encode("ascii", "ignore").decode("ascii").strip() or "Trading System Alert"
     headers = {
-        "Title": title,
+        "Title": clean_title,
         "Priority": priority,
         "Markdown": "yes",
     }
