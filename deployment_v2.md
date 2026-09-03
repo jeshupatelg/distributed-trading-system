@@ -58,3 +58,10 @@
      - Added live channel test dispatch button.
   4. **Docker Compose (`docker-compose.yml`)**:
      - Added `notification-service` container definition on port `8085:8085` joined to `default` (kafka_net) and `gateway_net`.
+- **Deployment & Verification**:
+  - Pushed git commits to `master` and built/deployed stack to Docker host at `192.168.29.96`.
+  - Created topic `order-reject-events` in Kafka cluster.
+  - Verified `notification-service` status: Up and Healthy on port 8085.
+  - Verified `quant-dashboard` status: Up and Healthy on port 8501 (`/dashboard/`).
+  - Verified `order-processing-service` actively publishes `OrderRejectEvent` to `order-reject-events`.
+  - Verified live dispatch and response from `/api/v1/notify/test`.
