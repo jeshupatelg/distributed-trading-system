@@ -154,7 +154,7 @@ async def send_test_notification(req: TestNotificationRequest):
                 title, body = formatter.format_complete_ntfy(mock_data)
                 priority = "high"
                 tags = ["white_check_mark"]
-            success = await send_ntfy(cfg["ntfy_url"], cfg["ntfy_topic"], title, body, priority=priority, tags=tags)
+            success = await send_ntfy(cfg["ntfy_url"], cfg["ntfy_topic"], title, body, priority=priority, tags=tags, token=cfg.get("ntfy_token"))
             results["ntfy"] = {"success": success}
 
     # 3. Evolution API

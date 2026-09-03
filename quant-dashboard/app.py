@@ -393,6 +393,7 @@ elif page == "Notification Center":
     ntfy_enabled = False
     ntfy_url = "https://ntfy.sh"
     ntfy_topic = "trading-system-alerts"
+    ntfy_token = ""
 
     if redis_connected:
         try:
@@ -413,6 +414,8 @@ elif page == "Notification Center":
 
             ntfy_enabled = (r_client.get("notify:config:ntfy:enabled") or "false").lower() in ("true", "1", "yes")
             ntfy_url = r_client.get("notify:config:ntfy:url") or "https://ntfy.sh"
+            ntfy_topic = r_client.get("notify:config:ntfy:topic") or "trading-system-alerts"
+            ntfy_token = r_client.get("notify:config:ntfy:token") or ""
             ntfy_topic = r_client.get("notify:config:ntfy:topic") or "trading-system-alerts"
         except Exception as e:
             st.error(f"Error querying notification settings from Redis: {e}")
@@ -513,6 +516,7 @@ elif page == "Notification Center":
             new_ntfy_url = st.text_input("ntfy Server URL", value=ntfy_url, help="ntfy server (e.g. https://ntfy.sh or self-hosted).")
         with n_col2:
             new_ntfy_topic = st.text_input("ntfy Topic Name", value=ntfy_topic, placeholder="e.g. my-trading-alerts", help="Private topic name to subscribe on mobile/desktop.")
+            new_ntfy_token = st.text_input("ntfy Access Token (Optional)", value=ntfy_token, type="password", placeholder="tk_...", help="Bearer token if authentication is enabled on your ntfy server.")
 
         st.divider()
         save_btn = st.form_submit_button("💾 Save Notification Configurations to Redis", type="primary", use_container_width=True)
@@ -542,6 +546,7 @@ elif page == "Notification Center":
                 r_client.set("notify:config:ntfy:enabled", "true" if new_ntfy_enabled else "false")
                 r_client.set("notify:config:ntfy:url", new_ntfy_url.strip())
                 r_client.set("notify:config:ntfy:topic", new_ntfy_topic.strip())
+                r_client.set("notify:config:ntfy:token", new_ntfy_token.strip())
 
                 st.success("✅ Notification configurations saved to Redis successfully! Changes take effect immediately across all dispatchers.")
                 time.sleep(1)

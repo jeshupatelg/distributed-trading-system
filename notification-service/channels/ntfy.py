@@ -3,7 +3,7 @@ import httpx
 
 logger = logging.getLogger("NtfyChannel")
 
-async def send_ntfy(server_url: str, topic: str, title: str, markdown_body: str, priority: str = "urgent", tags: list = None) -> bool:
+async def send_ntfy(server_url: str, topic: str, title: str, markdown_body: str, priority: str = "urgent", tags: list = None, token: str = None) -> bool:
     if not server_url or not topic:
         logger.warning("ntfy server_url or topic not configured. Skipping.")
         return False
@@ -17,6 +17,8 @@ async def send_ntfy(server_url: str, topic: str, title: str, markdown_body: str,
     }
     if tags:
         headers["Tags"] = ",".join(tags)
+    if token:
+        headers["Authorization"] = f"Bearer {token.strip()}"
 
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:

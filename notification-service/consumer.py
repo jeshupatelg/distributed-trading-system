@@ -92,7 +92,7 @@ class NotificationConsumer:
                 tasks.append(send_telegram(cfg["telegram_token"], cfg["telegram_chat_id"], tg_text))
 
             if cfg.get("ntfy_enabled") and cfg.get("ntfy_url") and cfg.get("ntfy_topic"):
-                tasks.append(send_ntfy(cfg["ntfy_url"], cfg["ntfy_topic"], ntfy_title, ntfy_body, priority="urgent", tags=["warning", "rotating_light"]))
+                tasks.append(send_ntfy(cfg["ntfy_url"], cfg["ntfy_topic"], ntfy_title, ntfy_body, priority="urgent", tags=["warning", "rotating_light"], token=cfg.get("ntfy_token")))
 
             if cfg.get("evolution_enabled") and cfg.get("evolution_url") and cfg.get("evolution_instance") and cfg.get("evolution_recipient"):
                 tasks.append(send_evolution_whatsapp(cfg["evolution_url"], cfg["evolution_apikey"], cfg["evolution_instance"], cfg["evolution_recipient"], wa_text))
@@ -111,7 +111,7 @@ class NotificationConsumer:
                 tasks.append(send_telegram(cfg["telegram_token"], cfg["telegram_chat_id"], tg_text))
 
             if cfg.get("ntfy_enabled") and cfg.get("ntfy_url") and cfg.get("ntfy_topic"):
-                tasks.append(send_ntfy(cfg["ntfy_url"], cfg["ntfy_topic"], ntfy_title, ntfy_body, priority="default", tags=["rocket"]))
+                tasks.append(send_ntfy(cfg["ntfy_url"], cfg["ntfy_topic"], ntfy_title, ntfy_body, priority="default", tags=["rocket"], token=cfg.get("ntfy_token")))
 
             if cfg.get("evolution_enabled") and cfg.get("evolution_url") and cfg.get("evolution_instance") and cfg.get("evolution_recipient"):
                 tasks.append(send_evolution_whatsapp(cfg["evolution_url"], cfg["evolution_apikey"], cfg["evolution_instance"], cfg["evolution_recipient"], wa_text))
@@ -133,7 +133,7 @@ class NotificationConsumer:
                 tasks.append(send_telegram(cfg["telegram_token"], cfg["telegram_chat_id"], tg_text))
 
             if cfg.get("ntfy_enabled") and cfg.get("ntfy_url") and cfg.get("ntfy_topic"):
-                tasks.append(send_ntfy(cfg["ntfy_url"], cfg["ntfy_topic"], ntfy_title, ntfy_body, priority="high", tags=[icon_tag]))
+                tasks.append(send_ntfy(cfg["ntfy_url"], cfg["ntfy_topic"], ntfy_title, ntfy_body, priority="high", tags=[icon_tag], token=cfg.get("ntfy_token")))
 
             if cfg.get("evolution_enabled") and cfg.get("evolution_url") and cfg.get("evolution_instance") and cfg.get("evolution_recipient"):
                 tasks.append(send_evolution_whatsapp(cfg["evolution_url"], cfg["evolution_apikey"], cfg["evolution_instance"], cfg["evolution_recipient"], wa_text))

@@ -23,6 +23,7 @@ TELEGRAM_ENABLED = os.getenv("TELEGRAM_ENABLED", "false").lower() in ("true", "1
 
 NTFY_URL = os.getenv("NTFY_URL", "https://ntfy.sh").rstrip("/")
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "trading-system-alerts")
+NTFY_TOKEN = os.getenv("NTFY_TOKEN", "")
 NTFY_ENABLED = os.getenv("NTFY_ENABLED", "false").lower() in ("true", "1", "yes")
 
 EVOLUTION_API_URL = os.getenv("EVOLUTION_API_URL", "http://192.168.29.96:3015").rstrip("/")
@@ -69,6 +70,7 @@ def get_active_config(r=None):
         # ntfy
         "ntfy_url": NTFY_URL,
         "ntfy_topic": NTFY_TOPIC,
+        "ntfy_token": NTFY_TOKEN,
         "ntfy_enabled": NTFY_ENABLED,
         # Evolution API
         "evolution_url": EVOLUTION_API_URL,
@@ -103,6 +105,9 @@ def get_active_config(r=None):
             if r.exists("notify:config:ntfy:topic"):
                 val = r.get("notify:config:ntfy:topic")
                 if val: cfg["ntfy_topic"] = val
+            if r.exists("notify:config:ntfy:token"):
+                val = r.get("notify:config:ntfy:token")
+                if val: cfg["ntfy_token"] = val
             if r.exists("notify:config:ntfy:enabled"):
                 val = r.get("notify:config:ntfy:enabled")
                 cfg["ntfy_enabled"] = val.lower() in ("true", "1", "yes")
