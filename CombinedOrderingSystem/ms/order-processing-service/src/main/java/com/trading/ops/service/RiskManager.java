@@ -98,8 +98,7 @@ public class RiskManager {
                 }
             }
         }
-        // Update reference price with current valid tick price
-        redisTemplate.opsForValue().set(lastPriceKey, String.valueOf(price));
+        // Update reference price with current valid tick price handled out-of-band by price-cache-service
 
         // 4. Velocity / Rate Throttling Gate
         int maxSecVelocity = getIntConfig(CFG_VELOCITY_PER_SEC, DEFAULT_VELOCITY_PER_SEC);

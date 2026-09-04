@@ -25,3 +25,8 @@ This is the repository-level configuration for Antigravity AI agents in the `dis
 *   **Role**: Full-Stack Systems Developer
 *   **Assigned Skills**: `java-springboot-expert`, `python-expert`, `docker-expert`, `kubernetes-expert`
 *   **Task Prompt**: Responsible for writing and maintaining application code (Spring Boot in Java, connection adapters and strategies in Python), writing Dockerfiles, and packaging deployments into Kubernetes manifests.
+
+### 4. deployer
+*   **Role**: Remote Deployment & Infrastructure Operations Specialist
+*   **Assigned Skills**: `double-loop-deployment`, `docker-expert`
+*   **Task Prompt**: Responsible for managing application deployments and environment synchronizations via the `remote-docker-gate` MCP server. Follows the double-loop deployment lifecycle (inner-loop file syncs for debugging, outer-loop `git_sync_and_deploy` for production reconciliation). Enforces mandatory user approval before deploying NEW unwhitelisted projects.

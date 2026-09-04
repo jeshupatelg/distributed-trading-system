@@ -153,3 +153,13 @@ Second deployment run of the `distributed-trading-system` microservices stack, u
   1. Configured the Grafana service in [`docker-compose.yml`](file:///c:/Users/jeshu/Projects/distributed-trading-system/docker-compose.yml) to serve from the subpath by injecting variables `GF_SERVER_ROOT_URL=/grafana/` and `GF_SERVER_SERVE_FROM_SUB_PATH=true`.
   2. Synced the configuration and redeployed the Docker Compose stack.
 
+### [2026-09-05T03:45:00+05:30] Deployment 9: Decoupled Out-of-Band Price Cache Microservice (ADR 0012)
+* **Issue**: `OPS` inline price writes created stale price risks during low signal volume or risk rejection periods, while inline writes on hot-path order execution coupled concerns unnecessarily.
+* **Root Cause Analysis (RCA)**: Strategy signals are generated at low rates compared to exchange market ticks. When `RiskManager` rejected orders early or when no signals occurred, `market:last_price:<SYMBOL>` remained frozen in Redis, corrupting pre-trade Price Collar checks and real-time portfolio equity valuation.
+* **Fix Applied**:
+  1. Refactored [`RiskManager.java`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/ms/order-processing-service/src/main/java/com/trading/ops/service/RiskManager.java#L102) to remove inline Redis price write operations (`redisTemplate.opsForValue().set(...)`), converting `OPS` to a pure reader of Redis reference prices.
+  2. Created dedicated microservice `price-cache-service/` (`main.py`, `config.py`, `Dockerfile`) in Python with `FLUSH_INTERVAL_SEC` (0.5s default) micro-batching via pipelined Redis `MSET`.
+  3. Integrated multi-provider discovery matching `PROVIDER_<NAME>_ENDPOINT` environment variables.
+  4. Documented architectural decision in [ADR 0012](file:///c:/Users/jeshu/Projects/distributed-trading-system/.agents/adr/0012-decoupled-price-cache-service.md) and updated HLD diagrams in [`hld.puml`](file:///c:/Users/jeshu/Projects/distributed-trading-system/design/hld/hld.puml) and [`hld.md`](file:///c:/Users/jeshu/Projects/distributed-trading-system/design/hld/hld.md).
+
+

@@ -154,6 +154,31 @@ services:
     depends_on:
       - tick-lb
 
+  # Dedicated Out-of-Band Price Cache Service (ADR 0012)
+  price-cache-service:
+    build:
+      context: ./price-cache-service
+      dockerfile: Dockerfile
+    container_name: price-cache-service
+    ports:
+      - "8083:8080"
+    labels:
+      application: "distributed-trading"
+      prometheus.scrape: "true"
+      prometheus.port: "8080"
+      prometheus.path: "/metrics"
+    environment:
+      - REDIS_HOST=host.docker.internal
+      - REDIS_PORT=6379
+      - FLUSH_INTERVAL_SEC=0.5
+      - MAX_BATCH_SIZE=100
+      - PROVIDER_ALPACA_ENDPOINT=connection-manager-alpaca:50051
+      - PROVIDER_X_ENDPOINT=connection-manager-x:50051
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - tick-lb
+
   # Order Management Service (OMS)
   order-management-service:
     build:

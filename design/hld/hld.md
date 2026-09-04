@@ -17,12 +17,13 @@ Refer to the PlantUML architecture diagram at [hld.puml](file:///c:/Users/jeshu/
 2.  **Shared Cache Layer (Redis)**: Holds low-latency operational state (balances, positions, blocked margin, and pending order IDs).
 3.  **SQL Database (RDBMS)**: The persistent transactional storage of historical order records (`tracked_orders`) and execution activity logs.
 4.  **Signal Generators (Python)**: Scalable, ticker-specific indicator processors that calculate algorithmic metrics and publish signals to Kafka. Due to static L7 routing, they are decoupled from specific broker SDK layers.
-5. **Order Processing Service (OPS) (Java/Spring Boot)**: Contains the core trading state machine (hot-path).
-    *   **OPS Core (Low-Latency Pool)**: Runs risk validation checks, acts as the sole initiator of account cache restoration in Redis (either during service bootstrap or as a pre-order fallback risk validation check), and executes orders through the target connection manager.
-6. **Order Management Service (OMS) (Java/Spring Boot)**: Manages order lifecycles and fallback reconciliation (cold-path).
+5.  **Price Cache Service (Python)**: Dedicated out-of-band market data microservice. Subscribes to gRPC market data streams from Connection Managers, micro-batches tick price updates in RAM, and flushes deduplicated keys (`market:last_price:<SYMBOL>`) to Redis via pipelined `MSET` at configurable intervals (e.g. 500ms).
+6. **Order Processing Service (OPS) (Java/Spring Boot)**: Contains the core trading state machine (hot-path).
+    *   **OPS Core (Low-Latency Pool)**: Runs risk validation checks against Redis (reading balances, pending orders, and reference prices as a pure reader), acts as the sole initiator of account cache restoration in Redis, and executes orders through the target connection manager.
+7. **Order Management Service (OMS) (Java/Spring Boot)**: Manages order lifecycles and fallback reconciliation (cold-path).
     *   **OMS Tracker (Background Pool)**: Handles database persistence, cache settlement upon updates, and cron-based reconciliation.
-7.  **Quant/UI Dashboard Service (Streamlit/Python)**: The operator frontend. In its initial phase, it is strictly scoped to **read-only / pull operations**. It queries live balance/positions from the Redis Cache layer, reads historical logs/orders from the SQL Database, and hosts a user interface showing provider connectivity. Future write updates (triggers to start/stop strategies or override orders) are stubbed out as future enhancement points.
-8.  **Observability Stack (Prometheus / Grafana)**: The system telemetry and alert manager. It runs out-of-band to monitor service performance and health. Prometheus dynamically scrapes metrics from JVM/Spring Boot endpoints, Python services, tick-lb, and Kafka, exposing visual metrics on Grafana.
+8.  **Quant/UI Dashboard Service (Streamlit/Python)**: The operator frontend. In its initial phase, it is strictly scoped to **read-only / pull operations**. It queries live balance/positions from the Redis Cache layer, reads historical logs/orders from the SQL Database, and hosts a user interface showing provider connectivity. Future write updates (triggers to start/stop strategies or override orders) are stubbed out as future enhancement points.
+9.  **Observability Stack (Prometheus / Grafana)**: The system telemetry and alert manager. It runs out-of-band to monitor service performance and health. Prometheus dynamically scrapes metrics from JVM/Spring Boot endpoints, Python services, tick-lb, and Kafka, exposing visual metrics on Grafana.
 
 ---
 
@@ -34,6 +35,7 @@ The numbered steps correspond to the lifecycle flows illustrated in the HLD diag
 *   **Step 1.a/b [Establish Session]**: At startup, `connection-manager-alpaca` (or `connection-manager-x`) authenticates and opens WebSocket/REST sessions with the respective broker endpoints.
 *   **Step 2.a/b [Stream Ticks]**: The connection managers serialize incoming tick data into binary Protocol Buffers and stream it to the `Load Balancer` via gRPC.
 *   **Step 3 [Route Stream]**: The `Load Balancer` performs static Layer-7 routing based on the `x-ticker` header, distributing the tick feeds to corresponding specialized `Signal Generator` replicas over gRPC.
+*   **Step 3.5 [Out-of-Band Price Caching]**: `Price Cache Service` consumes real-time gRPC market data streams, deduplicates tick prices in memory, and writes `market:last_price:<SYMBOL>` keys to `Redis Cache` via micro-batched `MSET`.
 *   **Step 4 [Publish Signal]**: The `Signal Generators` update rolling indicators and publish a `signal-event` to the `Kafka Cluster`.
 
 ### Phase B: Order Placement & Pre-Order Risk Gate

@@ -78,6 +78,12 @@ rectangle "Load Balancer" as LB #0369A1;line:075985;line.bold;text:FFFFFF {
   [Route by Ticker] #FFFFFF;line:38BDF8;text:1F2937
 }
 
+' 5.5 Out-of-Band Price Caching Tier
+rectangle "Price Cache Service" as PriceCache #4338CA;line:3730A3;line.bold;text:FFFFFF {
+  [gRPC Stream Subscriber] #FFFFFF;line:A5B4FC;text:1F2937
+  [Micro-Batch Flusher (MSET)] #FFFFFF;line:A5B4FC;text:1F2937
+}
+
 ' 6. Signal Generator Replicas
 package "Signal Generators" {
   rectangle "SignalGen-A (Ticker1)" as SG1 #3730A3;line:312E81;line.bold;text:FFFFFF
@@ -129,6 +135,8 @@ ConnMgrX -[#2563EB]-> LB : 2.b. Stream Ticks (gRPC)
 LB -[#2563EB]-> SG1 : 3. Route stream (gRPC)
 LB -[#2563EB]-> SG2 : 3. Route stream (gRPC)
 LB -[#2563EB]-> SG3 : 3. Route stream (gRPC)
+LB -[#2563EB]-> PriceCache : 3.5 Stream Ticks Out-of-Band (gRPC)
+PriceCache -[#7C3AED]left-> Cache : 3.6 Micro-Batched MSET (Redis market:last_price:<SYMBOL>)
 
 ' Signal generation to Kafka
 SG1 -[#EA580C]-> Kafka : 4. Publish signal-event (Kafka)
@@ -137,7 +145,7 @@ SG3 -[#EA580C]-> Kafka : 4. Publish signal-event (Kafka)
 
 ' Order Placement Path
 Kafka -[#EA580C]-> OPS : 5. Consume signal-event (Kafka)
-OPS -[#7C3AED]left-> Cache : 6. Read balance, add Blocked Margin & SADD to pending set (Redis)
+OPS -[#7C3AED]left-> Cache : 6. Read balance & market:last_price, add Blocked Margin & SADD to pending set (Redis)
 OPS -[#2563EB]up-> ConnMgrAlpaca : 7.a. Submit Order to Alpaca (gRPC Unary)
 OPS -[#2563EB]up-> ConnMgrX : 7.b. Submit Order to Broker X (gRPC Unary)
 OPS -[#EA580C]-> Kafka : 8. Publish order-create-event (Kafka)
