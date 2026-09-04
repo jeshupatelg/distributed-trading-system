@@ -161,7 +161,7 @@ services:
       dockerfile: Dockerfile
     container_name: price-cache-service
     ports:
-      - "8083:8080"
+      - "8084:8080"
     labels:
       application: "distributed-trading"
       prometheus.scrape: "true"
