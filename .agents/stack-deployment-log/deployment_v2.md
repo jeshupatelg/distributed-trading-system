@@ -162,4 +162,14 @@ Second deployment run of the `distributed-trading-system` microservices stack, u
   3. Integrated multi-provider discovery matching `PROVIDER_<NAME>_ENDPOINT` environment variables.
   4. Documented architectural decision in [ADR 0012](file:///c:/Users/jeshu/Projects/distributed-trading-system/.agents/adr/0012-decoupled-price-cache-service.md) and updated HLD diagrams in [`hld.puml`](file:///c:/Users/jeshu/Projects/distributed-trading-system/design/hld/hld.puml) and [`hld.md`](file:///c:/Users/jeshu/Projects/distributed-trading-system/design/hld/hld.md).
 
+### [2026-09-05T04:25:00+05:30] Deployment 10: Double-Loop Phase 2 Outer-Loop Git Reconciliation & Redeployment
+* **Issue**: Staging Phase 1 inner-loop file syncs required formal production git reconciliation and hard reset to `origin/master`.
+* **Root Cause Analysis (RCA)**: Inner-loop file syncs bypass git version control on the remote host for rapid iteration. Per the Double-Loop Deployment Strategy, after inner-loop verification, changes must be committed, pushed to origin, and reconciled on the host via `git_sync_and_deploy`.
+* **Fix Applied**:
+  1. Committed local changes (`commit e1893cf` and `commit 6ff26ca`) including `price-cache-service` microservice, `OPS` refactoring, and host port mapping update (`8084:8080` in `docker-compose.yml`).
+  2. Pushed local `master` branch to `origin/master` (`https://github.com/jeshupatelg/distributed-trading-system.git`).
+  3. Executed atomic outer-loop tool `git_sync_and_deploy(project_name="distributed-trading-system", branch="master")` to perform git fetch, `git reset --hard origin/master`, and clean stack redeployment.
+  4. Verified container status (`price-cache-service`, `order-processing-service`, etc.) and confirmed healthy gRPC tick streaming, health probe (`200 OK`), and Prometheus metrics scraping.
+
+
 
