@@ -77,7 +77,12 @@ class AlpacaRestClient:
         if take_profit_price and take_profit_price > 0:
             take_profit_data = TakeProfitRequest(limit_price=round(float(take_profit_price), 2))
 
-        order_class = OrderClass.BRACKET if (stop_loss_data or take_profit_data) else None
+        if stop_loss_data and take_profit_data:
+            order_class = OrderClass.BRACKET
+        elif stop_loss_data or take_profit_data:
+            order_class = OrderClass.OTO
+        else:
+            order_class = None
 
         if order_type.lower() == "market":
             req = MarketOrderRequest(

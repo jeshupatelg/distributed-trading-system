@@ -183,6 +183,17 @@ Second deployment run of the `distributed-trading-system` microservices stack, u
   3. Configured `STRATEGY_PARAMS_JSON` in `docker-compose.yml` with `FixedDollarCapStrategy` ($5,000.00 cash allocation per trade) and mounted `./config/cap_strategy:/app/cap_strategy:ro`.
   4. Executed Double-Loop Deployment (`commit afec406` pushed to `origin/master` and `git_sync_and_deploy` executed). Verified `signal-gen-aapl` emits `qty=15` ($4,912) and `signal-gen-msft` emits `qty=9` ($4,605), passing Pre-Trade Risk Manager validation.
 
+### [2026-09-09T00:18:00+05:30] Deployment 12: Alpaca SDK Order Class Alignment (OTO for Single Stop-Loss Attachments)
+* **Issue**: gRPC `PlaceOrder` calls routed from `order-processing-service` to `connection-manager-alpaca` failed with Pydantic validation error: `Value error, bracket orders require take_profit.limit_price`.
+* **Root Cause Analysis (RCA)**: `AlpacaRestClient.submit_order` in `connection-manager-alpaca/alpaca_client.py` set `order_class = OrderClass.BRACKET` whenever either `stop_loss_data` or `take_profit_data` was present. Alpaca SDK strictly requires both `take_profit.limit_price` and `stop_loss.stop_price` for `OrderClass.BRACKET`. When `RiskManager` attached a single Stop Loss without a Take Profit target, the SDK rejected the request.
+* **Fix Applied**:
+  1. Updated `submit_order` in [`connection-manager-alpaca/alpaca_client.py`](file:///c:/Users/jeshu/Projects/distributed-trading-system/connection-manager-alpaca/alpaca_client.py#L80-L85):
+     - Sets `OrderClass.BRACKET` only when *both* `stop_loss_data` and `take_profit_data` are present.
+     - Sets `OrderClass.OTO` (One-Triggers-Other) when only a single attachment (e.g. Stop Loss) is present.
+     - Sets `None` when neither is present.
+  2. Executed Double-Loop Deployment (Phase 1 inner loop sync & Phase 2 outer loop git reconciliation).
+
+
 
 
 
