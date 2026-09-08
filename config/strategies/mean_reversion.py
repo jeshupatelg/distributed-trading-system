@@ -1,6 +1,20 @@
 from base_strategy import BaseStrategy
 import logging
 import math
+import sys
+import os
+
+# Import CapStrategyFactory from cap_strategy package
+try:
+    from cap_strategy.factory import CapStrategyFactory
+except ImportError:
+    cap_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cap_strategy")
+    if cap_dir not in sys.path:
+        sys.path.insert(0, cap_dir)
+    try:
+        from factory import CapStrategyFactory
+    except ImportError:
+        CapStrategyFactory = None
 
 logger = logging.getLogger("MeanReversionStrategy")
 
@@ -10,6 +24,13 @@ class MeanReversionStrategy(BaseStrategy):
         self.threshold = float(parameters.get("threshold", 2.0))
         self.prices = []
         self.position = 0 # Track local position state for signal transitions
+        
+        cap_config = parameters.get("cap_strategy", {})
+        if CapStrategyFactory:
+            self.cap_strategy = CapStrategyFactory.create(cap_config)
+        else:
+            self.cap_strategy = None
+            
         logger.info(f"Initialized Mean Reversion Strategy with period={self.period}, threshold={self.threshold}")
 
     def on_bar(self, bar: dict) -> dict:
@@ -40,12 +61,14 @@ class MeanReversionStrategy(BaseStrategy):
             pass
             
         signal = None
+        calc_qty = self.cap_strategy.calculate_qty(symbol, close, "BUY", bar) if self.cap_strategy else 100
+
         # Oversold - trigger buy if z-score is below negative threshold and we are not long
         if z_score < -self.threshold and self.position <= 0:
             signal = {
                 "symbol": symbol,
                 "action": "BUY",
-                "qty": 100,
+                "qty": calc_qty,
                 "price": close,
                 "provider": provider,
                 "strategy": "MeanReversion"
@@ -56,7 +79,7 @@ class MeanReversionStrategy(BaseStrategy):
             signal = {
                 "symbol": symbol,
                 "action": "SELL",
-                "qty": 100,
+                "qty": calc_qty,
                 "price": close,
                 "provider": provider,
                 "strategy": "MeanReversion"
@@ -66,3 +89,4 @@ class MeanReversionStrategy(BaseStrategy):
         if signal:
             logger.info(f"Mean Reversion Triggered Signal (z_score={z_score:.2f}): {signal}")
         return signal
+

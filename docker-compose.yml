@@ -69,13 +69,14 @@ services:
       prometheus.path: "/metrics/"
     volumes:
       - ./config/strategies/sma_crossover.py:/app/strategies/sma_crossover.py:ro
+      - ./config/cap_strategy:/app/cap_strategy:ro
     environment:
       - HOST=0.0.0.0
       - PORT_REST=8000
       - PORT_GRPC=50051
       - STRATEGY_FILE_PATH=/app/strategies/sma_crossover.py
       - STRATEGY_CLASS_NAME=SmaCrossoverStrategy
-      - 'STRATEGY_PARAMS_JSON={"fast_period": 10, "slow_period": 30}'
+      - 'STRATEGY_PARAMS_JSON={"fast_period": 10, "slow_period": 30, "cap_strategy": {"name": "fixed_dollar", "target_cash": 5000.0}}'
       - TICKER=AAPL
       # Connect through Envoy Load Balancer
       - CONNECTION_MANAGER_ENDPOINT=tick-lb:50051
@@ -103,13 +104,14 @@ services:
       prometheus.path: "/metrics/"
     volumes:
       - ./config/strategies/mean_reversion.py:/app/strategies/mean_reversion.py:ro
+      - ./config/cap_strategy:/app/cap_strategy:ro
     environment:
       - HOST=0.0.0.0
       - PORT_REST=8000
       - PORT_GRPC=50051
       - STRATEGY_FILE_PATH=/app/strategies/mean_reversion.py
       - STRATEGY_CLASS_NAME=MeanReversionStrategy
-      - 'STRATEGY_PARAMS_JSON={"period": 20, "threshold": 2.0}'
+      - 'STRATEGY_PARAMS_JSON={"period": 20, "threshold": 2.0, "cap_strategy": {"name": "fixed_dollar", "target_cash": 5000.0}}'
       - TICKER=MSFT
       # Connect through Envoy Load Balancer
       - CONNECTION_MANAGER_ENDPOINT=tick-lb:50051
