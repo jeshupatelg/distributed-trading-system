@@ -399,7 +399,7 @@
       },
       "gridPos": {
         "h": 7,
-        "w": 12,
+        "w": 8,
         "x": 0,
         "y": 20
       },
@@ -436,8 +436,8 @@
       },
       "gridPos": {
         "h": 7,
-        "w": 12,
-        "x": 12,
+        "w": 8,
+        "x": 8,
         "y": 20
       },
       "id": 8,
@@ -461,6 +461,57 @@
             "fillOpacity": 15
           },
           "unit": "mbytes"
+        }
+      }
+    },
+    {
+      "title": "9. Kafka Dispatch Error Ratio (%)",
+      "type": "gauge",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 20
+      },
+      "id": 10,
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "Prometheus"
+          },
+          "editorMode": "code",
+          "expr": "((sum(rate(connection_manager_kafka_publish_errors_total{instance=~\"${provider}\"}[5m])) / (sum(rate(connection_manager_trade_updates_total{instance=~\"${provider}\"}[5m])) + sum(rate(connection_manager_kafka_publish_errors_total{instance=~\"${provider}\"}[5m])))) * 100) or vector(0)",
+          "legendFormat": "Kafka Error %",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 100,
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
         }
       }
     }

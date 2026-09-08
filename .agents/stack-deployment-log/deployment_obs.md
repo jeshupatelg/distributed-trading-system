@@ -161,3 +161,16 @@ Deployment run of the Observability (OBS) stack changes for the `distributed-tra
   3. Added `0. Broker Connection Liveness Status` and `Active gRPC Downstream Streams` stat panels to `connection_manager_metrics.json`.
   4. Updated `.agent/component_metrics_tracking.md` readiness matrix to set both metrics to `LIVE`.
   5. Committed, pushed, and executed outer-loop deployment via MCP `git_sync_and_deploy`. Confirmed healthy metric rendering on `/metrics`.
+
+### [2026-09-08T23:12:00+05:30] Success Op - Instrument Kafka Dispatch Error Counter & Add Dashboard Panel
+* **Intent**: Kafka producer error tracking & dashboard panel addition
+* **Status**: Success (Code, Config & Deployment)
+* **Action**: Instrumented `connection_manager_kafka_publish_errors_total` counter in `telemetry.py` and `kafka_publisher.py`, added `9. Kafka Dispatch Error Ratio (%)` gauge panel to Grafana dashboard, updated `.agent/component_metrics_tracking.md` readiness matrix to `LIVE`, and deployed stack.
+* **Root Cause Analysis (RCA)**:
+  - Connection manager lacked a counter tracking message production/delivery failures to Kafka, making it impossible to compute Kafka publishing error ratios or alert on event bus dispatch failures.
+* **Fix Applied**:
+  1. Added `KAFKA_PUBLISH_ERRORS` (`connection_manager_kafka_publish_errors_total`) Counter in `telemetry.py`.
+  2. Instrumented `telemetry.KAFKA_PUBLISH_ERRORS.inc()` inside `_delivery_report` callback and `publish_order_update` exception handler in `kafka_publisher.py`.
+  3. Added `9. Kafka Dispatch Error Ratio (%)` gauge panel (`id: 10`) to `connection_manager_metrics.json`.
+  4. Updated `.agent/component_metrics_tracking.md` readiness matrix to set metric #9 to `LIVE`.
+  5. Committed, pushed to `origin/master`, and deployed via outer-loop `git_sync_and_deploy`.

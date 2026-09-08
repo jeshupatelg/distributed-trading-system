@@ -92,6 +92,8 @@ class KafkaEventPublisher:
         """
         if err is not None:
             logger.error("Failed to deliver Kafka message: %s", err)
+            import telemetry
+            telemetry.KAFKA_PUBLISH_ERRORS.inc()
         else:
             logger.debug(
                 "Successfully delivered message to %s [%d] at offset %d",
@@ -124,6 +126,8 @@ class KafkaEventPublisher:
             logger.info("Enqueued order update event to Kafka topic: %s", self.topic)
         except Exception as e:
             logger.error("Exception during Kafka publishing: %s", e)
+            import telemetry
+            telemetry.KAFKA_PUBLISH_ERRORS.inc()
 
     def close(self):
         """Stop background tasks, flush remaining messages, and release pool resources."""

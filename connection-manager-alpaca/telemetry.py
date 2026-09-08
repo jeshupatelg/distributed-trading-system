@@ -43,10 +43,16 @@ TRADE_UPDATES_PUBLISHED = Counter(
     ["event"]
 )
 
+KAFKA_PUBLISH_ERRORS = Counter(
+    "connection_manager_kafka_publish_errors_total",
+    "Total number of Kafka message publishing errors on trade updates"
+)
+
 # Pre-initialize metric sample lines so Prometheus exports them immediately with value 0.0 at boot
 BROKER_CONNECTED.labels(stream_type="data").set(0)
 BROKER_CONNECTED.labels(stream_type="trading").set(0)
 GRPC_ACTIVE_STREAMS.set(0)
+KAFKA_PUBLISH_ERRORS.inc(0)
 
 if hasattr(config, "TICKERS_TO_TRACK") and config.TICKERS_TO_TRACK:
     for ticker_symbol in config.TICKERS_TO_TRACK:
