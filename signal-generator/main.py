@@ -119,6 +119,7 @@ async def consume_market_data(strategy: BaseStrategy, publisher: KafkaSignalPubl
                             warmed_count += 1
                         logger.info(f"Warm-up complete. Pre-populated strategy cache with {warmed_count} bars.")
                         is_warmed_up = True
+                        telemetry.WARMUP_COMPLETED.set(1)
                     except Exception as ex:
                         if warmup_attempts >= max_warmup_retries:
                             logger.warning(
@@ -126,6 +127,7 @@ async def consume_market_data(strategy: BaseStrategy, publisher: KafkaSignalPubl
                                 f"Proceeding permanently with cold start..."
                             )
                             is_warmed_up = True  # Prevent infinite warm-up retries on stream reconnections
+                            telemetry.WARMUP_COMPLETED.set(1)
                         else:
                             logger.warning(
                                 f"Strategy warm-up failed: {ex}. "
@@ -135,8 +137,10 @@ async def consume_market_data(strategy: BaseStrategy, publisher: KafkaSignalPubl
                 # 2. Live Streaming Phase: Subscribe to StreamMarketData
                 req = connection_manager_pb2.MarketDataRequest(symbols=[config.TICKER])
                 stream = stub.StreamMarketData(req, metadata=metadata)
+                telemetry.GRPC_CONNECTED.set(1)
                 logger.info(f"Subscribed successfully to {config.TICKER} feed. Consuming stream...")
                 async for bar_proto in stream:
+                    telemetry.GRPC_CONNECTED.set(1)
                     logger.info(
                         f"Received tick via gRPC: symbol={bar_proto.symbol} "
                         f"close={bar_proto.close} timestamp={bar_proto.timestamp}"
@@ -155,7 +159,6 @@ async def consume_market_data(strategy: BaseStrategy, publisher: KafkaSignalPubl
                     try:
                         # Process tick with pluggable strategy
                         import time
-                        import telemetry
                         
                         start_time = time.perf_counter()
                         signal = strategy.on_bar(bar_dict)
@@ -171,8 +174,10 @@ async def consume_market_data(strategy: BaseStrategy, publisher: KafkaSignalPubl
                         logger.error(f"Error running strategy on_bar: {ex}", exc_info=True)
                         
         except grpc.RpcError as rpc_ex:
+            telemetry.GRPC_CONNECTED.set(0)
             logger.error(f"gRPC stream connection error: {rpc_ex.details() if hasattr(rpc_ex, 'details') else rpc_ex}. Retrying in {retry_delay}s...")
         except Exception as ex:
+            telemetry.GRPC_CONNECTED.set(0)
             logger.error(f"Unexpected consumer error: {ex}. Retrying in {retry_delay}s...", exc_info=True)
             
         await asyncio.sleep(retry_delay)

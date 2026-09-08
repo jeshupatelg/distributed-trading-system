@@ -25,7 +25,26 @@ INDICATOR_VALUE = Gauge(
     ["ticker", "indicator_name"]
 )
 
+GRPC_CONNECTED = Gauge(
+    "strategy_grpc_connected",
+    "Boolean status indicating whether signal generator is connected to gRPC market data stream (1 = connected, 0 = disconnected)"
+)
+
+WARMUP_COMPLETED = Gauge(
+    "strategy_warmup_completed",
+    "Boolean status indicating whether historical data warm-up has completed for the strategy (1 = ready, 0 = warming up)"
+)
+
+KAFKA_PUBLISH_ERRORS = Counter(
+    "strategy_kafka_publish_errors_total",
+    "Total number of Kafka message publishing errors when sending trade signals"
+)
+
 # Pre-initialize metric sample lines so Prometheus exports them immediately with value 0.0 at boot
+GRPC_CONNECTED.set(0)
+WARMUP_COMPLETED.set(0)
+KAFKA_PUBLISH_ERRORS.inc(0)
+
 if hasattr(config, "TICKER") and config.TICKER:
     BARS_PROCESSED.labels(ticker=config.TICKER).inc(0)
     SIGNALS_GENERATED.labels(ticker=config.TICKER, action="BUY").inc(0)

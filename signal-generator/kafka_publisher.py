@@ -59,10 +59,14 @@ class KafkaSignalPublisher:
             self.producer.poll(0)
         except Exception as e:
             logger.error(f"Error executing sync produce to Kafka: {e}")
+            import telemetry
+            telemetry.KAFKA_PUBLISH_ERRORS.inc()
 
     def _delivery_report(self, err, msg):
         if err is not None:
             logger.error(f"Failed to deliver signal to Kafka: {err}")
+            import telemetry
+            telemetry.KAFKA_PUBLISH_ERRORS.inc()
         else:
             logger.debug(f"Successfully published signal to {msg.topic()} [{msg.partition()}]")
 
