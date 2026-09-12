@@ -43,7 +43,11 @@ public class ReconciliationJob {
         log.info("Found {} pending orders to reconcile.", pendingOrders.size());
         for (TrackedOrder order : pendingOrders) {
             String orderId = order.getOrderId();
-            String provider = order.getProvider() != null ? order.getProvider() : "alpaca";
+            if (order.getProvider() == null || order.getProvider().isBlank()) {
+                log.error("TrackedOrder ID {} is missing mandatory provider field. Skipping reconciliation.", orderId);
+                continue;
+            }
+            String provider = order.getProvider().toLowerCase().trim();
 
             try {
                 OrderStatusResponse response = reconciliationClient.getOrderStatus(provider, orderId);

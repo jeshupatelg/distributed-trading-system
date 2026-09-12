@@ -150,7 +150,6 @@ services:
       - KAFKA_TOPIC_SIGNALS=trading-signals
       - KAFKA_TOPIC_ORDER_CREATE=order-create-events
       - PROVIDER_ALPACA_ENDPOINT=connection-manager-alpaca:50051
-      - PROVIDER_X_ENDPOINT=connection-manager-x:50051
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -175,7 +174,6 @@ services:
       - FLUSH_INTERVAL_SEC=0.5
       - MAX_BATCH_SIZE=100
       - PROVIDER_ALPACA_ENDPOINT=connection-manager-alpaca:50051
-      - PROVIDER_X_ENDPOINT=connection-manager-x:50051
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -207,7 +205,6 @@ services:
       - KAFKA_TOPIC_RAW_ORDER_UPDATES=raw-order-updates
       - KAFKA_TOPIC_ORDER_COMPLETE=order-complete-events
       - PROVIDER_ALPACA_ENDPOINT=connection-manager-alpaca:50051
-      - PROVIDER_X_ENDPOINT=connection-manager-x:50051
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

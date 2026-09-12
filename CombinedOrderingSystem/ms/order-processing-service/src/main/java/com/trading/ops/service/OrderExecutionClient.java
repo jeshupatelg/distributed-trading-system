@@ -7,14 +7,15 @@ import com.trading.connection.grpc.ClosePositionsResponse;
 import com.trading.connection.grpc.OrderExecutionServiceGrpc;
 import com.trading.connection.grpc.OrderRequest;
 import com.trading.connection.grpc.OrderResponse;
+import com.trading.shared.config.ProviderConfig;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.StatusRuntimeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
@@ -22,11 +23,11 @@ import java.util.concurrent.TimeUnit;
 public class OrderExecutionClient {
     private static final Logger log = LoggerFactory.getLogger(OrderExecutionClient.class);
 
-    private final Environment env;
+    private final List<ProviderConfig> providerBeans;
     private final ConcurrentHashMap<String, ManagedChannel> channels = new ConcurrentHashMap<>();
 
-    public OrderExecutionClient(Environment env) {
-        this.env = env;
+    public OrderExecutionClient(List<ProviderConfig> providerBeans) {
+        this.providerBeans = providerBeans;
     }
 
     /**
@@ -94,17 +95,36 @@ public class OrderExecutionClient {
         }
     }
 
+    /**
+     * Proactively checks connectivity health of the provider connection manager gateway.
+     */
+    public boolean checkProviderHealth(String provider) {
+        try {
+            String endpoint = resolveEndpoint(provider);
+            ManagedChannel channel = getOrCreateChannel(endpoint);
+            io.grpc.ConnectivityState state = channel.getState(true);
+            boolean healthy = (state != io.grpc.ConnectivityState.SHUTDOWN && state != io.grpc.ConnectivityState.TRANSIENT_FAILURE);
+            log.info("Provider '{}' connection manager gRPC health status: {} (channel state: {})", provider, healthy ? "HEALTHY" : "UNHEALTHY", state);
+            return healthy;
+        } catch (Exception e) {
+            log.warn("Health check failed for provider '{}': {}", provider, e.getMessage());
+            return false;
+        }
+    }
 
     private String resolveEndpoint(String provider) {
-        String key = "trading.providers." + provider.toLowerCase();
-        String endpoint = env.getProperty(key);
-        if (endpoint == null) {
-            endpoint = env.getProperty("trading.providers.default");
+        if (provider == null || provider.isBlank()) {
+            throw new IllegalArgumentException("Provider string must not be null or blank");
         }
-        if (endpoint == null) {
-            throw new IllegalArgumentException("No gRPC endpoint configured for provider: " + provider);
+        String prov = provider.toLowerCase().trim();
+        if (providerBeans != null) {
+            for (ProviderConfig config : providerBeans) {
+                if (prov.equals(config.getName())) {
+                    return config.getEndpoint();
+                }
+            }
         }
-        return endpoint;
+        throw new IllegalArgumentException("No gRPC endpoint configured for registered provider: " + provider);
     }
 
     private ManagedChannel getOrCreateChannel(String endpoint) {

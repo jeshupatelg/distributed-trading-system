@@ -6,11 +6,12 @@ import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.context.annotation.Import;
 import com.trading.shared.config.SharedAppConfig;
+import com.trading.shared.config.ProviderConfiguration;
 
 @SpringBootApplication
 @EnableScheduling
 @EnableKafka
-@Import(SharedAppConfig.class)
+@Import({SharedAppConfig.class, ProviderConfiguration.class})
 public class OrderManagementApplication {
     public static void main(String[] args) {
         SpringApplication.run(OrderManagementApplication.class, args);

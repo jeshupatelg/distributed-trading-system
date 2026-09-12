@@ -52,7 +52,11 @@ public class SignalConsumer {
                 return;
             }
 
-            String provider = signal.provider() != null ? signal.provider() : "alpaca";
+            if (signal.provider() == null || signal.provider().isBlank()) {
+                log.error("Signal payload missing mandatory 'provider' field: {}", signal);
+                throw new IllegalArgumentException("Signal payload missing mandatory 'provider' field");
+            }
+            String provider = signal.provider().toLowerCase();
             String action = signal.action().toUpperCase();
             if (!action.equals("BUY") && !action.equals("SELL")) {
                 log.warn("Unknown signal action: {}. Expected BUY or SELL. Ignoring.", action);
@@ -68,7 +72,8 @@ public class SignalConsumer {
                 signal.symbol(),
                 signal.qty(),
                 signal.price(),
-                action
+                action,
+                provider
             );
 
             if (!decision.approved()) {
@@ -139,7 +144,7 @@ public class SignalConsumer {
 
             } catch (Exception e) {
                 log.error("Order submission failed. Reverting risk margin lock for order ID: {}", clientOrderId, e);
-                riskManager.revertLock(clientOrderId, decision.calculatedCost());
+                riskManager.revertLock(clientOrderId, decision.calculatedCost(), provider);
                 try {
                     OrderRejectEvent rejectEvent = new OrderRejectEvent(
                         clientOrderId,

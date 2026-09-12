@@ -217,19 +217,25 @@ elif page == "Risk Engine & Controls":
     # 2. Live Risk Metrics & Drawdown Monitor
     st.subheader("📊 Real-Time Pre-Trade Firewall Telemetry")
     
-    # Read live balances & drawdown
-    cash = float(r_client.get("balance:cash") or 100000.0) if redis_connected else 100000.0
-    start_equity = float(r_client.get("balance:starting_equity") or 100000.0) if redis_connected else 100000.0
-    blocked_margin = float(r_client.get("balance:blocked") or 0.0) if redis_connected else 0.0
-    max_daily_loss = float(r_client.get("risk:config:max_daily_loss") or 2000.0) if redis_connected else 2000.0
+    # Selected Provider Context
+    sel_prov = st.selectbox("Select Provider Context for Risk Firewall", ["alpaca", "megabull"], index=0, key="risk_prov_sel")
+    prov_key = sel_prov.lower()
+
+    # Read live balances & drawdown per provider
+    cash = float(r_client.get(f"balance:cash:{prov_key}") or r_client.get("balance:cash") or 100000.0) if redis_connected else 100000.0
+    start_equity = float(r_client.get(f"balance:starting_equity:{prov_key}") or r_client.get("balance:starting_equity") or 100000.0) if redis_connected else 100000.0
+    blocked_margin = float(r_client.get(f"balance:blocked:{prov_key}") or r_client.get("balance:blocked") or 0.0) if redis_connected else 0.0
+    max_daily_loss = float(r_client.get(f"risk:config:max_daily_loss:{prov_key}") or r_client.get("risk:config:max_daily_loss") or 2000.0) if redis_connected else 2000.0
     
-    # Open positions
-    pos_keys = r_client.keys("positions:*") if redis_connected else []
+    # Open positions per provider
+    pos_keys = r_client.keys(f"positions:{prov_key}:*") if redis_connected else []
+    if not pos_keys and redis_connected:
+        pos_keys = r_client.keys("positions:*")
     positions_val = 0.0
     for pk in pos_keys:
         sym = pk.split(":")[-1]
         qty = float(r_client.get(pk) or 0.0)
-        last_px = float(r_client.get(f"market:last_price:{sym}") or 100.0)
+        last_px = float(r_client.get(f"market:last_price:{prov_key}:{sym}") or r_client.get(f"market:last_price:{sym}") or 100.0)
         positions_val += (qty * last_px)
         
     total_equity = cash + positions_val
@@ -243,25 +249,25 @@ elif page == "Risk Engine & Controls":
     m4.metric("Max Allowed Daily Loss", f"{curr_sym}{max_daily_loss:,.2f}")
 
     # Drawdown progress bar
-    st.write(f"**Daily Loss Gate Threshold Utilization**: {current_drawdown:,.2f} / {max_daily_loss:,.2f} {curr_sym}")
+    st.write(f"**Daily Loss Gate Threshold Utilization ({sel_prov.upper()})**: {current_drawdown:,.2f} / {max_daily_loss:,.2f} {curr_sym}")
     progress_val = min(1.0, current_drawdown / max_daily_loss if max_daily_loss > 0 else 0.0)
     st.progress(progress_val)
 
     st.divider()
 
     # 3. Interactive Risk Threshold Configuration
-    st.subheader("⚙️ Modifiable Pre-Trade Risk Limits (Persisted to Redis)")
+    st.subheader(f"⚙️ Modifiable Pre-Trade Risk Limits for {sel_prov.upper()} (Persisted to Redis)")
     st.markdown("Adjust limits dynamically. Modifications take effect **immediately** across all worker threads without service restarts.")
 
-    # Load current configs from Redis or defaults
-    curr_daily_loss = float(r_client.get("risk:config:max_daily_loss") or 2000.0) if redis_connected else 2000.0
-    curr_collar_pct = float(r_client.get("risk:config:price_collar_pct") or 1.5) if redis_connected else 1.5
-    curr_vel_sec = int(r_client.get("risk:config:velocity_per_sec") or 5) if redis_connected else 5
-    curr_vel_min = int(r_client.get("risk:config:velocity_per_min") or 30) if redis_connected else 30
-    curr_max_qty = int(r_client.get("risk:config:max_order_qty") or 500) if redis_connected else 500
-    curr_max_val = float(r_client.get("risk:config:max_order_val") or 25000.0) if redis_connected else 25000.0
-    curr_max_conc = float(r_client.get("risk:config:max_concentration_pct") or 20.0) if redis_connected else 20.0
-    curr_stop_loss = float(r_client.get("risk:config:stop_loss_pct") or 2.0) if redis_connected else 2.0
+    # Load current configs from Redis or defaults per provider
+    curr_daily_loss = float(r_client.get(f"risk:config:max_daily_loss:{prov_key}") or r_client.get("risk:config:max_daily_loss") or 2000.0) if redis_connected else 2000.0
+    curr_collar_pct = float(r_client.get(f"risk:config:price_collar_pct:{prov_key}") or r_client.get("risk:config:price_collar_pct") or 1.5) if redis_connected else 1.5
+    curr_vel_sec = int(r_client.get(f"risk:config:velocity_per_sec:{prov_key}") or r_client.get("risk:config:velocity_per_sec") or 5) if redis_connected else 5
+    curr_vel_min = int(r_client.get(f"risk:config:velocity_per_min:{prov_key}") or r_client.get("risk:config:velocity_per_min") or 30) if redis_connected else 30
+    curr_max_qty = int(r_client.get(f"risk:config:max_order_qty:{prov_key}") or r_client.get("risk:config:max_order_qty") or 500) if redis_connected else 500
+    curr_max_val = float(r_client.get(f"risk:config:max_order_val:{prov_key}") or r_client.get("risk:config:max_order_val") or 25000.0) if redis_connected else 25000.0
+    curr_max_conc = float(r_client.get(f"risk:config:max_concentration_pct:{prov_key}") or r_client.get("risk:config:max_concentration_pct") or 20.0) if redis_connected else 20.0
+    curr_stop_loss = float(r_client.get(f"risk:config:stop_loss_pct:{prov_key}") or r_client.get("risk:config:stop_loss_pct") or 2.0) if redis_connected else 2.0
 
     with st.form("risk_config_form"):
         col_a, col_b = st.columns(2)
@@ -352,15 +358,18 @@ elif page == "Risk Engine & Controls":
         submitted = st.form_submit_button("💾 Save Risk Parameters to Redis", type="primary", use_container_width=True)
         if submitted:
             if redis_connected:
-                r_client.set("risk:config:max_daily_loss", str(new_daily_loss))
-                r_client.set("risk:config:price_collar_pct", str(new_collar_pct))
-                r_client.set("risk:config:velocity_per_sec", str(new_vel_sec))
-                r_client.set("risk:config:velocity_per_min", str(new_vel_min))
-                r_client.set("risk:config:max_order_qty", str(new_max_qty))
-                r_client.set("risk:config:max_order_val", str(new_max_val))
-                r_client.set("risk:config:max_concentration_pct", str(new_max_conc))
-                r_client.set("risk:config:stop_loss_pct", str(new_stop_loss))
-                st.success("✅ Risk parameters updated successfully in Redis! Pre-trade risk engine updated in real-time.")
+                # Save to provider-namespaced key as well as legacy global key
+                for p_k in [prov_key, ""]:
+                    suffix = f":{p_k}" if p_k else ""
+                    r_client.set(f"risk:config:max_daily_loss{suffix}", str(new_daily_loss))
+                    r_client.set(f"risk:config:price_collar_pct{suffix}", str(new_collar_pct))
+                    r_client.set(f"risk:config:velocity_per_sec{suffix}", str(new_vel_sec))
+                    r_client.set(f"risk:config:velocity_per_min{suffix}", str(new_vel_min))
+                    r_client.set(f"risk:config:max_order_qty{suffix}", str(new_max_qty))
+                    r_client.set(f"risk:config:max_order_val{suffix}", str(new_max_val))
+                    r_client.set(f"risk:config:max_concentration_pct{suffix}", str(new_max_conc))
+                    r_client.set(f"risk:config:stop_loss_pct{suffix}", str(new_stop_loss))
+                st.success(f"✅ Risk parameters for {sel_prov.upper()} updated successfully in Redis! Pre-trade risk engine updated in real-time.")
                 time.sleep(1)
                 st.rerun()
             else:

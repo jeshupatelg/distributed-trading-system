@@ -3,14 +3,15 @@ package com.trading.oms.service;
 import com.trading.connection.grpc.OrderExecutionServiceGrpc;
 import com.trading.connection.grpc.OrderStatusRequest;
 import com.trading.connection.grpc.OrderStatusResponse;
+import com.trading.shared.config.ProviderConfig;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.StatusRuntimeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
@@ -18,11 +19,11 @@ import java.util.concurrent.TimeUnit;
 public class ReconciliationClient {
     private static final Logger log = LoggerFactory.getLogger(ReconciliationClient.class);
 
-    private final Environment env;
+    private final List<ProviderConfig> providerBeans;
     private final ConcurrentHashMap<String, ManagedChannel> channels = new ConcurrentHashMap<>();
 
-    public ReconciliationClient(Environment env) {
-        this.env = env;
+    public ReconciliationClient(List<ProviderConfig> providerBeans) {
+        this.providerBeans = providerBeans;
     }
 
     /**
@@ -50,15 +51,18 @@ public class ReconciliationClient {
     }
 
     private String resolveEndpoint(String provider) {
-        String key = "trading.providers." + provider.toLowerCase();
-        String endpoint = env.getProperty(key);
-        if (endpoint == null) {
-            endpoint = env.getProperty("trading.providers.default");
+        if (provider == null || provider.isBlank()) {
+            throw new IllegalArgumentException("Provider string must not be null or blank");
         }
-        if (endpoint == null) {
-            throw new IllegalArgumentException("No gRPC endpoint configured for provider: " + provider);
+        String prov = provider.toLowerCase().trim();
+        if (providerBeans != null) {
+            for (ProviderConfig config : providerBeans) {
+                if (prov.equals(config.getName())) {
+                    return config.getEndpoint();
+                }
+            }
         }
-        return endpoint;
+        throw new IllegalArgumentException("No gRPC endpoint configured for provider: " + provider);
     }
 
     private ManagedChannel getOrCreateChannel(String endpoint) {

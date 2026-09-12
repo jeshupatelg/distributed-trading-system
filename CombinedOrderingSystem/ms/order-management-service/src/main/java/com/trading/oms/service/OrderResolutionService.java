@@ -1,6 +1,7 @@
 package com.trading.oms.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.trading.shared.config.ProviderConfig;
 import com.trading.oms.dto.OrderCompleteEvent;
 import com.trading.oms.model.TrackedOrder;
 import com.trading.oms.repository.TrackedOrderRepository;
@@ -11,6 +12,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
 
 @Service
 public class OrderResolutionService {
@@ -25,6 +28,7 @@ public class OrderResolutionService {
     private final StringRedisTemplate redisTemplate;
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper objectMapper;
+    private final List<ProviderConfig> providerBeans;
 
     @Value("${trading.topics.order-complete}")
     private String orderCompleteTopic;
@@ -32,102 +36,126 @@ public class OrderResolutionService {
     public OrderResolutionService(TrackedOrderRepository orderRepository, 
                                   StringRedisTemplate redisTemplate,
                                   KafkaTemplate<String, String> kafkaTemplate, 
-                                  ObjectMapper objectMapper) {
+                                  ObjectMapper objectMapper,
+                                  List<ProviderConfig> providerBeans) {
         this.orderRepository = orderRepository;
         this.redisTemplate = redisTemplate;
         this.kafkaTemplate = kafkaTemplate;
         this.objectMapper = objectMapper;
+        this.providerBeans = providerBeans;
     }
 
-    /**
-     * Resolves an order lifecycle by updating the DB, settling the Redis cache,
-     * and emitting a normalized order-complete event.
-     */
     @Transactional
-    public synchronized void resolveOrder(String orderId, String terminalStatus, int filledQty, double filledAvgPrice) {
-        log.info("Resolving order {} with status={}, filledQty={}, filledAvgPrice={}", 
-            orderId, terminalStatus, filledQty, filledAvgPrice);
-
-        // 1. Validate order ID idempotency to avoid double-processing
+    public void resolveOrder(String orderId, String status, int filledQty, double filledAvgPrice) {
         TrackedOrder order = orderRepository.findById(orderId).orElse(null);
         if (order == null) {
-            log.warn("Order {} not found in database. Settle cache fallback will still run.", orderId);
-            // Settle cache fallback to prevent permanent margin block
-            settleCacheOnly(orderId, terminalStatus, filledQty, filledAvgPrice);
+            log.warn("Order ID {} not found in database during resolution. Attempting Redis pending set cleanup.", orderId);
+            settleCacheOnly(orderId, status, filledQty, filledAvgPrice);
             return;
         }
 
-        String currentStatus = order.getStatus();
-        if ("COMPLETED".equals(currentStatus) || "FAILED".equals(currentStatus)) {
-            log.info("Order {} is already in terminal status '{}'. Skipping duplicate processing.", orderId, currentStatus);
+        if ("COMPLETED".equals(order.getStatus()) || "FAILED".equals(order.getStatus())) {
+            log.info("Order ID {} is already resolved (status='{}'). Idempotent skip.", orderId, order.getStatus());
             return;
         }
 
-        // 2. Update SQL transaction row status
-        order.setStatus(terminalStatus);
-        order.setFilledQty(filledQty);
-        order.setFilledAvgPrice(filledAvgPrice);
+        double estimatedCost = order.getQty() * order.getLimitPrice();
+
+        // 1. Update Database Status
+        order.setStatus(status);
         orderRepository.save(order);
-        log.info("Updated order {} in database to {}", orderId, terminalStatus);
+        log.info("Updated order ID {} status in PostgreSQL to '{}'", orderId, status);
 
-        // 3. Settle cash/positions in Redis & clear blocked margin
-        double estimatedValue = order.getLimitPrice() * order.getQty();
-        settleCache(order, estimatedValue, terminalStatus, filledQty, filledAvgPrice);
+        // 2. Settle Redis Caches (Blocked Margin, Cash Balance, Positions, Pending Sets)
+        settleCache(order, estimatedCost, status, filledQty, filledAvgPrice);
 
-        // 4. Publish normalized order-complete-event to Kafka
+        // 3. Emit Kafka order-complete-event
+        publishOrderCompleteEvent(order, status, filledQty, filledAvgPrice);
+    }
+
+    private void publishOrderCompleteEvent(TrackedOrder order, String status, int filledQty, double filledAvgPrice) {
         try {
             OrderCompleteEvent completeEvent = new OrderCompleteEvent(
-                orderId,
+                order.getOrderId(),
                 order.getSymbol(),
                 order.getQty(),
                 order.getSide(),
-                terminalStatus,
+                status,
                 filledQty,
                 filledAvgPrice,
                 order.getProvider(),
                 order.getStrategy()
             );
             String payload = objectMapper.writeValueAsString(completeEvent);
-            kafkaTemplate.send(orderCompleteTopic, orderId, payload);
-            log.info("Published order-complete-event to topic '{}' for order ID: {}", orderCompleteTopic, orderId);
+            kafkaTemplate.send(orderCompleteTopic, order.getOrderId(), payload);
+            log.info("Published order-complete-event to topic '{}' for order ID: {}", orderCompleteTopic, order.getOrderId());
         } catch (Exception e) {
-            log.error("Failed to publish order-complete-event for order ID: {}", orderId, e);
+            log.error("Failed to publish order-complete-event for order ID: {}", order.getOrderId(), e);
         }
     }
 
     private void settleCache(TrackedOrder order, double estimatedBlockedMargin, String status, int filledQty, double filledAvgPrice) {
-        // Clear blocked margin
-        redisTemplate.opsForValue().increment(BLOCKED_KEY, -estimatedBlockedMargin);
+        if (order.getProvider() == null || order.getProvider().isBlank()) {
+            log.error("TrackedOrder missing mandatory provider field for orderId: {}", order.getOrderId());
+            throw new IllegalArgumentException("TrackedOrder missing mandatory provider for orderId: " + order.getOrderId());
+        }
+        String provider = order.getProvider().toLowerCase().trim();
+
+        String blockedKey = BLOCKED_KEY + ":" + provider;
+        String cashKey = CASH_KEY + ":" + provider;
+        String pendingOrdersKey = PENDING_ORDERS_KEY + ":" + provider;
+
+        // Clear blocked margin for provider
+        redisTemplate.opsForValue().increment(blockedKey, -estimatedBlockedMargin);
+        redisTemplate.opsForValue().increment(BLOCKED_KEY, -estimatedBlockedMargin); // Legacy fallback
+
         // SREM orderId from pending set
+        redisTemplate.opsForSet().remove(pendingOrdersKey, order.getOrderId());
         redisTemplate.opsForSet().remove(PENDING_ORDERS_KEY, order.getOrderId());
 
         if ("COMPLETED".equals(status) && filledQty > 0) {
             double executionCost = filledAvgPrice * filledQty;
             String side = order.getSide().toUpperCase();
 
-            // Settle cash
+            // Settle cash per provider
             if ("BUY".equals(side)) {
+                redisTemplate.opsForValue().increment(cashKey, -executionCost);
                 redisTemplate.opsForValue().increment(CASH_KEY, -executionCost);
             } else if ("SELL".equals(side)) {
+                redisTemplate.opsForValue().increment(cashKey, executionCost);
                 redisTemplate.opsForValue().increment(CASH_KEY, executionCost);
             }
 
-            // Settle positions
-            String positionKey = POSITION_KEY_PREFIX + order.getSymbol();
-            String currentPosStr = redisTemplate.opsForValue().get(positionKey);
+            // Settle positions per provider
+            String posKeyNamespaced = POSITION_KEY_PREFIX + provider + ":" + order.getSymbol().toUpperCase();
+            String posKeyLegacy = POSITION_KEY_PREFIX + order.getSymbol().toUpperCase();
+
+            String currentPosStr = redisTemplate.opsForValue().get(posKeyNamespaced);
+            if (currentPosStr == null) {
+                currentPosStr = redisTemplate.opsForValue().get(posKeyLegacy);
+            }
             int currentPos = currentPosStr == null ? 0 : Integer.parseInt(currentPosStr);
             int newPos = "BUY".equals(side) ? currentPos + filledQty : currentPos - filledQty;
-            redisTemplate.opsForValue().set(positionKey, String.valueOf(newPos));
 
-            log.info("Settled Redis cache for order {}. Mutated cash by ${}, set position for {} to {}", 
-                order.getOrderId(), ("BUY".equals(side) ? "-" : "+") + executionCost, order.getSymbol(), newPos);
+            redisTemplate.opsForValue().set(posKeyNamespaced, String.valueOf(newPos));
+            redisTemplate.opsForValue().set(posKeyLegacy, String.valueOf(newPos));
+
+            log.info("Settled Redis cache for order {} (provider {}). Mutated cash by ${}, set position for {} to {}", 
+                order.getOrderId(), provider, ("BUY".equals(side) ? "-" : "+") + executionCost, order.getSymbol(), newPos);
         } else {
-            log.info("Setted Redis cache for failed/canceled order {}: cleared blocked margin and pending status.", order.getOrderId());
+            log.info("Settled Redis cache for failed/canceled order {}: cleared blocked margin and pending status for {}.", order.getOrderId(), provider);
         }
     }
 
     private void settleCacheOnly(String orderId, String status, int filledQty, double filledAvgPrice) {
         redisTemplate.opsForSet().remove(PENDING_ORDERS_KEY, orderId);
-        log.info("Cleared order {} from Redis pending set (cache-only recovery).", orderId);
+        if (providerBeans != null) {
+            for (ProviderConfig p : providerBeans) {
+                if (p.getName() != null && !p.getName().isBlank()) {
+                    redisTemplate.opsForSet().remove(PENDING_ORDERS_KEY + ":" + p.getName(), orderId);
+                }
+            }
+        }
+        log.info("Cleared order {} from Redis pending sets across configured providers (cache-only recovery).", orderId);
     }
 }

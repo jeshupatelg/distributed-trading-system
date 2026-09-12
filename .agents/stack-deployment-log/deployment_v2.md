@@ -193,7 +193,50 @@ Second deployment run of the `distributed-trading-system` microservices stack, u
      - Sets `None` when neither is present.
   2. Executed Double-Loop Deployment (Phase 1 inner loop sync & Phase 2 outer loop git reconciliation).
 
+### [2026-09-12T01:45:00+05:30] Deployment 13: Provider-Namespaced Redis Keys & Multi-Broker Risk Isolation
+* **Issue**: Global Redis keys (e.g. `balance:cash`, `risk:config:max_order_val`) mixed account state across brokers, causing currency unit conflicts (e.g. $ USD vs ₹ INR) and cross-broker risk gate rejections when integrating international brokers like MegaBull.
+* **Root Cause Analysis (RCA)**: `RiskManager` in `OPS`, `OrderResolutionService` in `OMS`, and `Quant Dashboard` accessed non-namespaced Redis keys. Adding Indian market paper trading brokers (MegaBull) required isolation of balance, open position, pending order, and risk rule limit keys by broker provider.
+* **Fix Applied**:
+  1. Updated [`RiskManager.java`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/ms/order-processing-service/src/main/java/com/trading/ops/service/RiskManager.java): Dynamic keyspace namespacing (`getProviderKey(baseKey, provider)` -> `balance:cash:alpaca`, `risk:config:max_order_val:megabull`). Omitted/blank provider defaults to `"alpaca"`.
+  2. Updated [`SignalConsumer.java`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/ms/order-processing-service/src/main/java/com/trading/ops/consumer/SignalConsumer.java): Passed extracted `provider` string from signal events into `evaluateAndLock` and `revertLock`.
+  3. Updated [`OrderResolutionService.java`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/ms/order-management-service/src/main/java/com/trading/oms/service/OrderResolutionService.java): Mutates provider-namespaced Redis balance and position keys upon order settlement (`balance:cash:<provider>`, `positions:<provider>:<symbol>`), retaining unnamespaced fallbacks.
+  4. Updated [`app.py`](file:///c:/Users/jeshu/Projects/distributed-trading-system/quant-dashboard/app.py): Added broker provider selector dropdown, updated balance/position metric queries to check namespaced Redis keys, and updated risk config form to write to `risk:config:<rule>:<provider>`.
+  5. Synchronized files to remote host via `sync_project_files` and redeployed stack via `deploy_compose_stack`.
 
+### [2026-09-12T02:05:00+05:30] Deployment 14: Mandatory Provider Validation & Autowired Provider Beans (OPS & OMS)
+* **Issue**: Hardcoded `"alpaca"` fallback defaults allowed signal payloads without a designated `provider` field to execute implicitly, while `Environment.getProperty(...)` calls bypassed Spring `@Configuration` bean injection.
+* **Root Cause Analysis (RCA)**: To enforce multi-broker safety and isolation, signals missing provider metadata must fail immediately. Hardcoded default string literals in code prevented explicit validation and multi-provider looping.
+* **Fix Applied**:
+  1. Removed all `"alpaca"` fallback literals in OPS (`SignalConsumer.java`, `RiskManager.java`, `OrderExecutionClient.java`, `RiskAdminController.java`) and OMS (`OrderResolutionService.java`, `ReconciliationClient.java`, `ReconciliationJob.java`).
+  2. Enforced that incoming signals or orders without a non-blank `provider` field throw an immediate `IllegalArgumentException`.
+  3. Created `ProviderConfig.java` and `@ConfigurationProperties(prefix = "trading") ProviderConfiguration.java` in both OPS and OMS to produce `List<ProviderConfig>` beans from `trading.providers`.
+  4. Updated `OrderExecutionClient` and `ReconciliationClient` to autowire `List<ProviderConfig>` and resolve gRPC endpoints from provider beans.
+  5. Implemented provider bean looping:
+     - `@PostConstruct` in `RiskManager` loops over all configured provider beans to initialize/seed account Redis caches at startup.
+     - Emergency kill switch in `RiskAdminController` loops over all configured provider beans when triggering global order cancellations and position liquidations.
+     - Pending order resolution and cache cleanup in `OrderResolutionService` loops across registered provider beans.
+  6. Synchronized 11 modified/new Java files to remote host via `sync_project_files` and successfully redeployed the compose stack via `deploy_compose_stack`.
 
+### [2026-09-12T02:14:00+05:30] Deployment 15: Promoted ProviderConfig & ProviderConfiguration to Shared Models Library
+* **Issue**: Duplicate `ProviderConfig.java` and `ProviderConfiguration.java` classes existed independently across `order-processing-service` and `order-management-service`.
+* **Root Cause Analysis (RCA)**: Provider configuration and bean mapping are core domain concepts shared between microservices. Keeping duplicate copies in service modules violates DRY principles.
+* **Fix Applied**:
+  1. Relocated `ProviderConfig.java` and `ProviderConfiguration.java` into [`CombinedOrderingSystem/libs/shared-models`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/libs/shared-models/src/main/java/com/trading/shared/config/) under package `com.trading.shared.config`.
+  2. Updated `shared-models/pom.xml` to include `spring-boot-autoconfigure` (provided scope).
+  3. Removed duplicate configuration files from OPS (`com.trading.ops.config`) and OMS (`com.trading.oms.config`).
+  4. Updated [`OrderProcessingApplication.java`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/ms/order-processing-service/src/main/java/com/trading/ops/OrderProcessingApplication.java) and [`OrderManagementApplication.java`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/ms/order-management-service/src/main/java/com/trading/oms/OrderManagementApplication.java) to `@Import({SharedAppConfig.class, ProviderConfiguration.class})`.
+  5. Updated imports in `RiskManager`, `OrderExecutionClient`, `RiskAdminController`, `OrderResolutionService`, and `ReconciliationClient`.
+  6. Synchronized file changes and deletions to remote host via `sync_project_files` and redeployed full stack via `deploy_compose_stack`.
 
+### [2026-09-12T05:40:00+05:30] Deployment 16: Hot-Path Account Cache Cleanup & Removal of Synthetic Cash Defaults
+* **Issue**: `RiskManager.evaluateAndLock` and `validateAndLock` called `ensureAccountCache(prov)` inline on every order evaluation. If cash keys were missing in Redis, it automatically seeded a synthetic default cash balance of `$100,000.00` (`DEFAULT_STARTING_CASH`), risking false positive margin approvals in live production environments.
+* **Root Cause Analysis (RCA)**: Hot-path pre-trade risk evaluations must not silently create synthetic money or alter account balance state when balance keys are missing. Uninitialized or inactive provider caches should result in a fail-closed order rejection.
+* **Fix Applied**:
+  1. Updated [`RiskManager.java`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/ms/order-processing-service/src/main/java/com/trading/ops/service/RiskManager.java):
+     - Removed inline `ensureAccountCache(prov)` calls from `evaluateAndLock`, `validateAndLock`, and `getRiskStatus`.
+     - Removed `DEFAULT_STARTING_CASH = 100000.00;` static constant.
+     - In `evaluateAndLock`, if `redisTemplate.opsForValue().get(cashKey) == null`, the engine immediately rejects the order with `RiskDecision(false, "PROVIDER_UNINITIALIZED_OR_INACTIVE", "PROVIDER_HEALTH", estimatedCost, 0.0)`.
+     - Updated `ensureAccountCache` so it only populates provider balance keys if legacy `balance:cash` key exists, avoiding synthetic default seeding.
+  2. Synchronized `RiskManager.java` to remote host via `sync_project_files` and redeployed full stack via `deploy_compose_stack`.
+  3. Verified all 18 whitelisted containers are healthy and running cleanly.
 

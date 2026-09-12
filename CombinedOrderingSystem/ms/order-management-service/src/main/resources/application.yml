@@ -39,8 +39,6 @@ trading:
   # Maps a provider name to its corresponding gRPC Connection Manager endpoint for reconciliation
   providers:
     alpaca: ${PROVIDER_ALPACA_ENDPOINT:connection-manager-alpaca:50051}
-    x: ${PROVIDER_X_ENDPOINT:connection-manager-x:50051}
-    default: ${PROVIDER_DEFAULT_ENDPOINT:connection-manager-alpaca:50051}
 
 management:
   endpoints:
