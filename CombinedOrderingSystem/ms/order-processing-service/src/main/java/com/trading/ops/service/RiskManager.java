@@ -64,13 +64,21 @@ public class RiskManager {
             for (ProviderConfig p : providerBeans) {
                 if (p.getName() != null && !p.getName().isBlank()) {
                     String prov = p.getName().toLowerCase().trim();
+                    if (!p.isConfigComplete()) {
+                        p.setActive(false);
+                        redisTemplate.opsForValue().set(PROVIDER_STATUS_KEY_PREFIX + prov, "INACTIVE");
+                        log.warn("Provider '{}' configuration is INCOMPLETE (missing endpoint, timezone, or exchange). Marking INACTIVE.", prov);
+                        continue;
+                    }
                     log.info("Proactively probing provider connection manager health on startup: '{}'", prov);
                     boolean healthy = orderExecutionClient != null && orderExecutionClient.checkProviderHealth(prov);
                     if (healthy) {
+                        p.setActive(true);
                         redisTemplate.opsForValue().set(PROVIDER_STATUS_KEY_PREFIX + prov, "ACTIVE");
                         log.info("Provider '{}' connection manager is ACTIVE. Initializing Redis account cache.", prov);
                         ensureAccountCache(prov);
                     } else {
+                        p.setActive(false);
                         redisTemplate.opsForValue().set(PROVIDER_STATUS_KEY_PREFIX + prov, "INACTIVE");
                         log.warn("Provider '{}' connection manager is UNREACHABLE/UNHEALTHY. Status set to INACTIVE.", prov);
                     }
@@ -80,6 +88,40 @@ public class RiskManager {
     }
 
     public record RiskDecision(boolean approved, String reason, String riskGateLevel, double calculatedCost, double stopLossPrice) {}
+
+    public ProviderConfig findProviderConfig(String provider) {
+        if (provider == null || provider.isBlank() || providerBeans == null) {
+            return null;
+        }
+        String prov = provider.toLowerCase().trim();
+        for (ProviderConfig p : providerBeans) {
+            if (prov.equalsIgnoreCase(p.getName())) {
+                return p;
+            }
+        }
+        return null;
+    }
+
+    public void markProviderInactive(String provider) {
+        String prov = normalizeProvider(provider);
+        ProviderConfig config = findProviderConfig(prov);
+        if (config != null) {
+            config.setActive(false);
+        }
+        redisTemplate.opsForValue().set(PROVIDER_STATUS_KEY_PREFIX + prov, "INACTIVE");
+        log.warn("Marked provider '{}' INACTIVE in-memory and in Redis.", prov);
+    }
+
+    public void markProviderActive(String provider) {
+        String prov = normalizeProvider(provider);
+        ProviderConfig config = findProviderConfig(prov);
+        if (config != null) {
+            config.setActive(true);
+        }
+        redisTemplate.opsForValue().set(PROVIDER_STATUS_KEY_PREFIX + prov, "ACTIVE");
+        ensureAccountCache(prov);
+        log.info("Marked provider '{}' ACTIVE in-memory and in Redis.", prov);
+    }
 
     private String normalizeProvider(String provider) {
         if (provider == null || provider.isBlank()) {
@@ -108,16 +150,15 @@ public class RiskManager {
             return new RiskDecision(false, "KILL_SWITCH_ACTIVE", "KILL_SWITCH", estimatedCost, 0.0);
         }
 
-        String statusKey = PROVIDER_STATUS_KEY_PREFIX + prov;
-        String providerStatus = redisTemplate.opsForValue().get(statusKey);
+        ProviderConfig config = findProviderConfig(prov);
         String cashKey = getProviderKey(CASH_KEY, prov);
         String blockedKey = getProviderKey(BLOCKED_KEY, prov);
         String startingEquityKey = getProviderKey(STARTING_EQUITY_KEY, prov);
         String pendingOrdersKey = getProviderKey(PENDING_ORDERS_KEY, prov);
 
-        // Check if provider account cache exists and provider is ACTIVE in Redis
-        if ("INACTIVE".equalsIgnoreCase(providerStatus) || redisTemplate.opsForValue().get(cashKey) == null) {
-            log.warn("RISK REJECTED: Account balance cache missing or provider {} is INACTIVE in Redis. Rejecting order {}", prov, orderId);
+        // Fast in-memory check (< 1µs) on ProviderConfig active flag and complete configuration
+        if (config == null || !config.isConfigComplete() || !config.isActive() || redisTemplate.opsForValue().get(cashKey) == null) {
+            log.warn("RISK REJECTED: Provider '{}' configuration incomplete, inactive, or balance cache missing in Redis. Rejecting order {}", prov, orderId);
             return new RiskDecision(false, "PROVIDER_UNINITIALIZED_OR_INACTIVE", "PROVIDER_HEALTH", estimatedCost, 0.0);
         }
 

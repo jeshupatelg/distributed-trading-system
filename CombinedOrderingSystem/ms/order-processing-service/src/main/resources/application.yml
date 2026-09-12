@@ -24,9 +24,12 @@ trading:
     signals: ${KAFKA_TOPIC_SIGNALS:trading-signals}
     order-create: ${KAFKA_TOPIC_ORDER_CREATE:order-create-events}
     order-reject: ${KAFKA_TOPIC_ORDER_REJECT:order-reject-events}
-  # Maps a provider name to its corresponding gRPC Connection Manager endpoint
+  # Maps registered trading providers to endpoints and market metadata
   providers:
-    alpaca: ${PROVIDER_ALPACA_ENDPOINT:connection-manager-alpaca:50051}
+    alpaca:
+      endpoint: ${PROVIDER_ALPACA_ENDPOINT:connection-manager-alpaca:50051}
+      timezone: ${PROVIDER_ALPACA_TIMEZONE:America/New_York}
+      exchange: ${PROVIDER_ALPACA_EXCHANGE:NASDAQ}
 
 management:
   endpoints:

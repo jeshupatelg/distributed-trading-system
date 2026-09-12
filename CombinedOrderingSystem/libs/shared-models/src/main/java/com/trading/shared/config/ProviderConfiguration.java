@@ -23,6 +23,10 @@ public class ProviderConfiguration {
         this.providers = providers;
     }
 
+    /**
+     * maybe make the {@link ProviderConfiguration ProviderConfiguration} create {@code map<str,ProviderConfig>}. Reduces list iteration overhead.
+     * @return
+     */
     @Bean
     public List<ProviderConfig> providerBeans() {
         List<ProviderConfig> list = new ArrayList<>();

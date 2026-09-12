@@ -24,10 +24,12 @@ public class OrderExecutionClient {
     private static final Logger log = LoggerFactory.getLogger(OrderExecutionClient.class);
 
     private final List<ProviderConfig> providerBeans;
+    private final RiskManager riskManager;
     private final ConcurrentHashMap<String, ManagedChannel> channels = new ConcurrentHashMap<>();
 
-    public OrderExecutionClient(List<ProviderConfig> providerBeans) {
+    public OrderExecutionClient(List<ProviderConfig> providerBeans, @org.springframework.context.annotation.Lazy RiskManager riskManager) {
         this.providerBeans = providerBeans;
+        this.riskManager = riskManager;
     }
 
     /**
@@ -46,6 +48,9 @@ public class OrderExecutionClient {
             return stub.placeOrder(request);
         } catch (StatusRuntimeException e) {
             log.error("gRPC PlaceOrder failed for provider '{}' at endpoint '{}': {}", provider, endpoint, e.getStatus());
+            if (riskManager != null) {
+                riskManager.markProviderInactive(provider);
+            }
             throw e;
         }
     }

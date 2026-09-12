@@ -36,9 +36,12 @@ trading:
     order-create: ${KAFKA_TOPIC_ORDER_CREATE:order-create-events}
     raw-updates: ${KAFKA_TOPIC_RAW_ORDER_UPDATES:raw-order-updates}
     order-complete: ${KAFKA_TOPIC_ORDER_COMPLETE:order-complete-events}
-  # Maps a provider name to its corresponding gRPC Connection Manager endpoint for reconciliation
+  # Maps registered trading providers to endpoints and market metadata for reconciliation & day equity resets
   providers:
-    alpaca: ${PROVIDER_ALPACA_ENDPOINT:connection-manager-alpaca:50051}
+    alpaca:
+      endpoint: ${PROVIDER_ALPACA_ENDPOINT:connection-manager-alpaca:50051}
+      timezone: ${PROVIDER_ALPACA_TIMEZONE:America/New_York}
+      exchange: ${PROVIDER_ALPACA_EXCHANGE:NASDAQ}
 
 management:
   endpoints:

@@ -240,3 +240,14 @@ Second deployment run of the `distributed-trading-system` microservices stack, u
   2. Synchronized `RiskManager.java` to remote host via `sync_project_files` and redeployed full stack via `deploy_compose_stack`.
   3. Verified all 18 whitelisted containers are healthy and running cleanly.
 
+### [2026-09-12T05:54:00+05:30] Deployment 17: Double-Loop Phase 2 Outer-Loop Git Reconciliation & Proactive Health Checks
+* **Issue**: All inner-loop refactorings (provider namespacing, shared configuration library, mandatory provider validation, and proactive startup health checks) required formal production git reconciliation and outer-loop redeployment.
+* **Root Cause Analysis (RCA)**: Following the Double-Loop Deployment Strategy guidelines, post inner-loop file sync verification, changes must be committed, pushed to `origin/master`, and atomically reconciled on the remote Docker host via `git_sync_and_deploy`.
+* **Fix Applied**:
+  1. Updated [`OrderExecutionClient.java`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/ms/order-processing-service/src/main/java/com/trading/ops/service/OrderExecutionClient.java) with `checkProviderHealth(provider)` to probe gRPC connectivity states (`ACTIVE` vs `INACTIVE`).
+  2. Updated [`RiskManager.java`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/ms/order-processing-service/src/main/java/com/trading/ops/service/RiskManager.java) `@PostConstruct initAccountCaches()` to set `provider:status:<provider>` in Redis and initialize account caches only when healthy.
+  3. Committed all changes (`commit 50a67f2`: `feat(multi-broker): provider namespacing, shared provider config library, mandatory provider validation, and proactive startup health checks`) and pushed to `origin/master`.
+  4. Executed atomic outer-loop tool `git_sync_and_deploy(project_name="distributed-trading-system", branch="master")` to perform git fetch, hard reset, and clean stack redeployment.
+  5. Verified all 18 whitelisted containers are running cleanly.
+
+

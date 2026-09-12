@@ -50,6 +50,21 @@ public class ReconciliationClient {
         }
     }
 
+    /**
+     * Proactively checks gRPC connectivity status of provider connection manager.
+     */
+    public boolean checkHealth(String provider) {
+        try {
+            String endpoint = resolveEndpoint(provider);
+            ManagedChannel channel = getOrCreateChannel(endpoint);
+            io.grpc.ConnectivityState state = channel.getState(true);
+            return (state != io.grpc.ConnectivityState.SHUTDOWN && state != io.grpc.ConnectivityState.TRANSIENT_FAILURE);
+        } catch (Exception e) {
+            log.warn("gRPC health probe failed for provider '{}': {}", provider, e.getMessage());
+            return false;
+        }
+    }
+
     private String resolveEndpoint(String provider) {
         if (provider == null || provider.isBlank()) {
             throw new IllegalArgumentException("Provider string must not be null or blank");
