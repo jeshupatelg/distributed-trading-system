@@ -90,7 +90,7 @@
                             <outputDirectory>${project.build.directory}/proto-schema</outputDirectory>
                             <resources>
                                 <resource>
-                                    <directory>${project.basedir}/../../config/grpc-proto-schema</directory>
+                                    <directory>${project.basedir}/../../../config/grpc-proto-schema</directory>
                                     <includes>
                                         <include>**/*.proto</include>
                                     </includes>
