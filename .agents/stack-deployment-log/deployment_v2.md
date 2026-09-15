@@ -278,5 +278,17 @@ Second deployment run of the `distributed-trading-system` microservices stack, u
   5. Refactored [`DailyEquityRefreshJob.java`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/ms/order-management-service/src/main/java/com/trading/oms/job/DailyEquityRefreshJob.java) to delegate execution to `EquityReconciliationService`.
   6. Updated [`RiskManager.java`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/ms/order-processing-service/src/main/java/com/trading/ops/service/RiskManager.java): Added sanitized configuration logging omitting the `endpoint` field for inactive/incomplete provider statuses.
 
+### [2026-09-16T00:45:00+05:30] Deployment 20: Canonical Proto Schema Unification, Maven Target Ingestion & Python Stub Reconciliation
+* **Issue**: `connection-manager-alpaca` failed to start with `AttributeError: module 'connection_manager_pb2_grpc' has no attribute 'AccountServiceServicer'`. Protobuf schema was duplicated between `CombinedOrderingSystem/libs/shared-models/src/main/proto` and `config/grpc-proto-schema/`, resulting in schema drift and un-regenerated Python stubs.
+* **Root Cause Analysis (RCA)**: `AccountService` was added only to `CombinedOrderingSystem` local proto in Deployment 19 without updating `config/grpc-proto-schema/connection_manager.proto` or recompiling Python stubs in `connection-manager-alpaca`. Furthermore, `CombinedOrderingSystem` maintained a duplicate proto because its Docker build context was scoped to `./CombinedOrderingSystem`, preventing Maven from accessing `../../config/grpc-proto-schema`.
+* **Fix Applied**:
+  1. Updated canonical schema [`config/grpc-proto-schema/connection_manager.proto`](file:///c:/Users/jeshu/Projects/distributed-trading-system/config/grpc-proto-schema/connection_manager.proto) with `AccountService`, `AccountRequest`, and `AccountDetailsResponse`.
+  2. Updated [`CombinedOrderingSystem/libs/shared-models/pom.xml`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/libs/shared-models/pom.xml) to use `maven-resources-plugin` to copy `../../config/grpc-proto-schema/*.proto` into `${project.build.directory}/proto-schema` and configured `protobuf-maven-plugin` `<protoSourceRoot>${project.build.directory}/proto-schema</protoSourceRoot>`.
+  3. Removed duplicate `CombinedOrderingSystem/libs/shared-models/src/main/proto/` from repository.
+  4. Updated Dockerfiles for `order-management-service` and `order-processing-service` to accept root context and copy `config/grpc-proto-schema`.
+  5. Updated `docker-compose.yml` build contexts for `order-management-service` and `order-processing-service` to root (`.`).
+  6. Regenerated Python Protobuf stubs for `connection-manager-alpaca`, `signal-generator`, and `price-cache-service`.
+  7. Untracked `config-registry.md`, `kafka-config.md`, and `redis-config.md` while keeping local files and ignoring them in `.gitignore`.
+
 
 

@@ -133,8 +133,8 @@ services:
   # Order Processing Service (OPS)
   order-processing-service:
     build:
-      context: ./CombinedOrderingSystem
-      dockerfile: ms/order-processing-service/Dockerfile
+      context: .
+      dockerfile: CombinedOrderingSystem/ms/order-processing-service/Dockerfile
     container_name: order-processing-service
     ports:
       - "8081:8081"
@@ -182,8 +182,8 @@ services:
   # Order Management Service (OMS)
   order-management-service:
     build:
-      context: ./CombinedOrderingSystem
-      dockerfile: ms/order-management-service/Dockerfile
+      context: .
+      dockerfile: CombinedOrderingSystem/ms/order-management-service/Dockerfile
     container_name: order-management-service
     ports:
       - "8082:8082"

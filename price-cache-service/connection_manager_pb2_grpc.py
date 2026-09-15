@@ -16,10 +16,12 @@ except ImportError:
     _version_not_supported = True
 
 if _version_not_supported:
-    warnings.warn(
+    raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
         + ' but the generated code in connection_manager_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
+        + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
+        + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
     )
 
 
@@ -62,3 +64,366 @@ class MarketDataServiceServicer:
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
+
+
+def add_MarketDataServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'StreamMarketData': grpc.unary_stream_rpc_method_handler(
+                    servicer.StreamMarketData,
+                    request_deserializer=connection__manager__pb2.MarketDataRequest.FromString,
+                    response_serializer=connection__manager__pb2.MarketDataResponse.SerializeToString,
+            ),
+            'GetHistoricalBars': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetHistoricalBars,
+                    request_deserializer=connection__manager__pb2.HistoricalBarsRequest.FromString,
+                    response_serializer=connection__manager__pb2.HistoricalBarsResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'trading.connection.MarketDataService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('trading.connection.MarketDataService', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class MarketDataService:
+    """Market Data Subscription Interface
+    """
+
+    @staticmethod
+    def StreamMarketData(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/trading.connection.MarketDataService/StreamMarketData',
+            connection__manager__pb2.MarketDataRequest.SerializeToString,
+            connection__manager__pb2.MarketDataResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetHistoricalBars(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/trading.connection.MarketDataService/GetHistoricalBars',
+            connection__manager__pb2.HistoricalBarsRequest.SerializeToString,
+            connection__manager__pb2.HistoricalBarsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+
+class OrderExecutionServiceStub:
+    """Order Operations Interface
+    """
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.PlaceOrder = channel.unary_unary(
+                '/trading.connection.OrderExecutionService/PlaceOrder',
+                request_serializer=connection__manager__pb2.OrderRequest.SerializeToString,
+                response_deserializer=connection__manager__pb2.OrderResponse.FromString,
+                _registered_method=True)
+        self.GetOrderStatus = channel.unary_unary(
+                '/trading.connection.OrderExecutionService/GetOrderStatus',
+                request_serializer=connection__manager__pb2.OrderStatusRequest.SerializeToString,
+                response_deserializer=connection__manager__pb2.OrderStatusResponse.FromString,
+                _registered_method=True)
+        self.CancelAllOrders = channel.unary_unary(
+                '/trading.connection.OrderExecutionService/CancelAllOrders',
+                request_serializer=connection__manager__pb2.CancelAllRequest.SerializeToString,
+                response_deserializer=connection__manager__pb2.CancelAllResponse.FromString,
+                _registered_method=True)
+        self.CloseAllPositions = channel.unary_unary(
+                '/trading.connection.OrderExecutionService/CloseAllPositions',
+                request_serializer=connection__manager__pb2.ClosePositionsRequest.SerializeToString,
+                response_deserializer=connection__manager__pb2.ClosePositionsResponse.FromString,
+                _registered_method=True)
+
+
+class OrderExecutionServiceServicer:
+    """Order Operations Interface
+    """
+
+    def PlaceOrder(self, request, context):
+        """Submits an order to the broker (Proxy Unary)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetOrderStatus(self, request, context):
+        """Queries order fill and state details (Proxy Unary)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CancelAllOrders(self, request, context):
+        """Emergency: Cancels all working/open orders on broker (Unary)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CloseAllPositions(self, request, context):
+        """Emergency: Closes all open positions and cancels open orders (Unary)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_OrderExecutionServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'PlaceOrder': grpc.unary_unary_rpc_method_handler(
+                    servicer.PlaceOrder,
+                    request_deserializer=connection__manager__pb2.OrderRequest.FromString,
+                    response_serializer=connection__manager__pb2.OrderResponse.SerializeToString,
+            ),
+            'GetOrderStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetOrderStatus,
+                    request_deserializer=connection__manager__pb2.OrderStatusRequest.FromString,
+                    response_serializer=connection__manager__pb2.OrderStatusResponse.SerializeToString,
+            ),
+            'CancelAllOrders': grpc.unary_unary_rpc_method_handler(
+                    servicer.CancelAllOrders,
+                    request_deserializer=connection__manager__pb2.CancelAllRequest.FromString,
+                    response_serializer=connection__manager__pb2.CancelAllResponse.SerializeToString,
+            ),
+            'CloseAllPositions': grpc.unary_unary_rpc_method_handler(
+                    servicer.CloseAllPositions,
+                    request_deserializer=connection__manager__pb2.ClosePositionsRequest.FromString,
+                    response_serializer=connection__manager__pb2.ClosePositionsResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'trading.connection.OrderExecutionService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('trading.connection.OrderExecutionService', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class OrderExecutionService:
+    """Order Operations Interface
+    """
+
+    @staticmethod
+    def PlaceOrder(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/trading.connection.OrderExecutionService/PlaceOrder',
+            connection__manager__pb2.OrderRequest.SerializeToString,
+            connection__manager__pb2.OrderResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetOrderStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/trading.connection.OrderExecutionService/GetOrderStatus',
+            connection__manager__pb2.OrderStatusRequest.SerializeToString,
+            connection__manager__pb2.OrderStatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CancelAllOrders(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/trading.connection.OrderExecutionService/CancelAllOrders',
+            connection__manager__pb2.CancelAllRequest.SerializeToString,
+            connection__manager__pb2.CancelAllResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CloseAllPositions(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/trading.connection.OrderExecutionService/CloseAllPositions',
+            connection__manager__pb2.ClosePositionsRequest.SerializeToString,
+            connection__manager__pb2.ClosePositionsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+
+class AccountServiceStub:
+    """Account Operations Interface
+    """
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.GetAccountDetails = channel.unary_unary(
+                '/trading.connection.AccountService/GetAccountDetails',
+                request_serializer=connection__manager__pb2.AccountRequest.SerializeToString,
+                response_deserializer=connection__manager__pb2.AccountDetailsResponse.FromString,
+                _registered_method=True)
+
+
+class AccountServiceServicer:
+    """Account Operations Interface
+    """
+
+    def GetAccountDetails(self, request, context):
+        """Queries account balance and equity details from broker (Unary)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_AccountServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'GetAccountDetails': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetAccountDetails,
+                    request_deserializer=connection__manager__pb2.AccountRequest.FromString,
+                    response_serializer=connection__manager__pb2.AccountDetailsResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'trading.connection.AccountService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('trading.connection.AccountService', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class AccountService:
+    """Account Operations Interface
+    """
+
+    @staticmethod
+    def GetAccountDetails(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/trading.connection.AccountService/GetAccountDetails',
+            connection__manager__pb2.AccountRequest.SerializeToString,
+            connection__manager__pb2.AccountDetailsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)

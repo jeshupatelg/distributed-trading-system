@@ -1,53 +1,83 @@
 @startuml
-title OMS - Order Update & Reconciliation Sequence
+title OMS - Comprehensive Lifecycle & Execution Sequences
 
-participant "Kafka" as Kafka
-participant "OrderUpdateConsumer" as OUC
-participant "OrderResolutionService" as ORS
-participant "Redis" as Redis
-participant "SQL Database" as DB
-participant "ReconciliationJob (Cron)" as Cron
-participant "Connection Manager (gRPC)" as CM
+autonumber
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
 
-== Live Update Path ==
-Kafka -> OUC : raw-order-update
-activate OUC
-OUC -> ORS : processUpdate(status)
-activate ORS
+box "Order Management Service (OMS)" #F8F9FA
+    participant "OrderCreateConsumer" as OCC
+    participant "OrderUpdateConsumer" as OUC
+    participant "ReconciliationJob" as RJ
+    participant "DailyEquityRefreshJob" as DERJ
+    participant "ProviderHealthCheckJob" as PHJ
+    participant "OrderResolutionService" as ORS
+end box
 
-ORS -> DB : Check if already COMPLETED (Idempotency)
-DB --> ORS : (Status)
+box "External Infrastructure & State" #E9ECEF
+    participant "Connection Manager (gRPC)" as CM
+    database "PostgreSQL" as DB
+    database "Redis" as Redis
+    queue "Kafka (order-create)" as K_Create
+    queue "Kafka (raw-updates)" as K_Update
+    queue "Kafka (order-complete)" as K_Complete
+end box
 
-alt Is NOT Completed
-    ORS -> Redis : SREM orders:pending {orderId}
-    ORS -> Redis : DECRBY blocked_margin {amount}
-    ORS -> Redis : INCRBY settled_positions {amount}
-    
-    ORS -> DB : UPDATE order SET status = 'COMPLETED'
-    
-    ORS -> Kafka : Publish order-complete-event
+== 1. Order Creation Event Path ==
+
+K_Create -> OCC : consumeOrderCreate(OrderCreateEvent)
+activate OCC
+OCC -> DB : existsById(orderId)
+alt Does Not Exist
+    OCC -> DB : INSERT TrackedOrder(status='PENDING')
 end
-deactivate ORS
+deactivate OCC
+
+== 2. Live Raw Order Update Event Path ==
+
+K_Update -> OUC : consumeOrderUpdate(RawOrderUpdate)
+activate OUC
+alt Terminal status ("filled", "completed", "canceled", "rejected")
+    OUC -> ORS : resolveOrder(orderId, status, filledQty, avgPrice)
+    activate ORS
+    ORS -> DB : UPDATE order SET status = ?
+    ORS -> Redis : Settle blocked margin, pending set, cash & positions
+    ORS -> K_Complete : Publish OrderCompleteEvent
+    deactivate ORS
+end
 deactivate OUC
 
-== Cron Reconciliation Path ==
-Cron -> Redis : SMEMBERS orders:pending
-activate Cron
-Redis --> Cron : [stalled_order_id]
+== 3. Scheduled Background Jobs ==
 
-Cron -> CM : GetOrderStatus(stalled_order_id)
-activate CM
-CM -> Broker : GET /v2/orders/{id}
-Broker --> CM : OrderState
-CM --> Cron : OrderStateResponse
-deactivate CM
-
-Cron -> ORS : processUpdate(OrderStateResponse)
-activate ORS
-ORS -> Redis : SREM orders:pending
-ORS -> DB : UPDATE order SET status = 'COMPLETED'
-ORS -> Kafka : Publish order-complete-event
-deactivate ORS
-deactivate Cron
+alt Periodic Reconciliation (every 30s)
+    RJ -> DB : findByStatus('PENDING')
+    loop for each pending order
+        RJ -> CM : gRPC getOrderStatus(orderId)
+        CM --> RJ : OrderStatusResponse(status, qty, price)
+        opt Terminal Status Reached
+            RJ -> ORS : resolveOrder(orderId, status, qty, price)
+        end
+    end
+else Daily Midnight Equity Rollover (every minute cron)
+    DERJ -> DERJ : Check provider local date != last_reset_date
+    opt Midnight Rollover Detected
+        DERJ -> CM : gRPC getAccountDetails(prov)
+        alt Broker Responds with Valid Equity
+            CM --> DERJ : AccountDetailsResponse(equity, cash)
+            DERJ -> Redis : SET balance:starting_equity:{prov}, cash, last_reset_date
+        else Fallback MTM Calculation
+            DERJ -> Redis : Compute cash + open positions MTM
+            DERJ -> Redis : SET balance:starting_equity:{prov}, last_reset_date
+        end
+    end
+else Health Probe & Recovery (every 15s)
+    PHJ -> Redis : GET provider:status:{prov}
+    opt Status == INACTIVE
+        PHJ -> CM : Channel connectivity state check
+        opt Healthy
+            PHJ -> Redis : SET provider:status:{prov} "ACTIVE"
+        end
+    end
+end
 
 @enduml
