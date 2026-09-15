@@ -13,28 +13,32 @@ import java.util.Map;
 @ConfigurationProperties(prefix = "trading")
 public class ProviderConfiguration {
 
-    private Map<String, String> providers = new HashMap<>();
+    private Map<String, ProviderConfig> providers = new HashMap<>();
 
-    public Map<String, String> getProviders() {
+    public Map<String, ProviderConfig> getProviders() {
         return providers;
     }
 
-    public void setProviders(Map<String, String> providers) {
+    public void setProviders(Map<String, ProviderConfig> providers) {
         this.providers = providers;
     }
 
     /**
-     * maybe make the {@link ProviderConfiguration ProviderConfiguration} create {@code map<str,ProviderConfig>}. Reduces list iteration overhead.
-     * @return
+     * Creates the list of ProviderConfig beans bound from trading.providers.
      */
     @Bean
     public List<ProviderConfig> providerBeans() {
         List<ProviderConfig> list = new ArrayList<>();
-        providers.forEach((name, endpoint) -> {
-            if (name != null && !name.isBlank() && !"default".equalsIgnoreCase(name)) {
-                list.add(new ProviderConfig(name.toLowerCase(), endpoint));
-            }
-        });
+        if (providers != null) {
+            providers.forEach((name, config) -> {
+                if (name != null && !name.isBlank() && !"default".equalsIgnoreCase(name) && config != null) {
+                    if (config.getName() == null || config.getName().isBlank()) {
+                        config.setName(name.toLowerCase().trim());
+                    }
+                    list.add(config);
+                }
+            });
+        }
         return list;
     }
 }

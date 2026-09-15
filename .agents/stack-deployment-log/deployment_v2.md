@@ -250,4 +250,12 @@ Second deployment run of the `distributed-trading-system` microservices stack, u
   4. Executed atomic outer-loop tool `git_sync_and_deploy(project_name="distributed-trading-system", branch="master")` to perform git fetch, hard reset, and clean stack redeployment.
   5. Verified all 18 whitelisted containers are running cleanly.
 
+### [2026-09-15T21:20:00+05:30] Deployment 18: Fix ProviderConfiguration Nested Properties Binding (PROVIDER_UNINITIALIZED_OR_INACTIVE RCA)
+* **Issue**: Every incoming trade signal was repeatedly rejected by the Pre-Trade Risk Engine with `PROVIDER_UNINITIALIZED_OR_INACTIVE` (`Gate: PROVIDER_HEALTH`).
+* **Root Cause Analysis (RCA)**: In `ProviderConfiguration.java`, the `providers` property was declared as `Map<String, String>`. In `application.yml`, providers are defined with nested structure (`trading.providers.alpaca.endpoint`, `.timezone`, `.exchange`). Spring Boot flattened these into three separate keys: `alpaca.endpoint`, `alpaca.timezone`, and `alpaca.exchange`. The `providerBeans()` factory created three incomplete ProviderConfig instances, none of which were named `"alpaca"`. Consequently, `findProviderConfig("alpaca")` returned `null`, failing pre-trade risk validation. Additionally, `ProviderHealthCheckJob` continually warned that `alpaca.endpoint/timezone/exchange` were incomplete and set their Redis statuses to `INACTIVE`.
+* **Fix Applied**:
+  1. Updated [`ProviderConfiguration.java`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/libs/shared-models/src/main/java/com/trading/shared/config/ProviderConfiguration.java) to declare `private Map<String, ProviderConfig> providers = new HashMap<>();`.
+  2. Updated `providerBeans()` to iterate over `Map<String, ProviderConfig>`, ensure `config.setName(name.toLowerCase().trim())`, and return fully populated `ProviderConfig` beans containing endpoint, timezone, and exchange.
+  3. Cleaned up bogus Redis keys (`provider:status:alpaca.endpoint`, `provider:status:alpaca.exchange`, `provider:status:alpaca.timezone`).
+
 
