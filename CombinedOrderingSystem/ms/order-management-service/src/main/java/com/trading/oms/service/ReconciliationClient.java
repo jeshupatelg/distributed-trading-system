@@ -1,5 +1,8 @@
 package com.trading.oms.service;
 
+import com.trading.connection.grpc.AccountDetailsResponse;
+import com.trading.connection.grpc.AccountRequest;
+import com.trading.connection.grpc.AccountServiceGrpc;
 import com.trading.connection.grpc.OrderExecutionServiceGrpc;
 import com.trading.connection.grpc.OrderStatusRequest;
 import com.trading.connection.grpc.OrderStatusResponse;
@@ -46,6 +49,30 @@ public class ReconciliationClient {
             return stub.getOrderStatus(request);
         } catch (StatusRuntimeException e) {
             log.error("gRPC GetOrderStatus failed for provider '{}' at endpoint '{}': {}", provider, endpoint, e.getStatus());
+            throw e;
+        }
+    }
+
+    /**
+     * Queries official account balance and equity details from provider connection manager via gRPC.
+     */
+    public AccountDetailsResponse getAccountDetails(String provider) {
+        String endpoint = resolveEndpoint(provider);
+        log.info("Routing gRPC GetAccountDetails for provider '{}' to endpoint '{}'", provider, endpoint);
+
+        ManagedChannel channel = getOrCreateChannel(endpoint);
+        AccountServiceGrpc.AccountServiceBlockingStub stub = 
+            AccountServiceGrpc.newBlockingStub(channel)
+                .withDeadlineAfter(5, TimeUnit.SECONDS);
+
+        AccountRequest request = AccountRequest.newBuilder()
+            .setProvider(provider)
+            .build();
+
+        try {
+            return stub.getAccountDetails(request);
+        } catch (StatusRuntimeException e) {
+            log.error("gRPC GetAccountDetails failed for provider '{}' at endpoint '{}': {}", provider, endpoint, e.getStatus());
             throw e;
         }
     }

@@ -29,6 +29,12 @@ service OrderExecutionService {
   rpc CloseAllPositions (ClosePositionsRequest) returns (ClosePositionsResponse);
 }
 
+// Account Operations Interface
+service AccountService {
+  // Queries account balance and equity details from broker (Unary)
+  rpc GetAccountDetails (AccountRequest) returns (AccountDetailsResponse);
+}
+
 
 message MarketDataRequest {
   repeated string symbols = 1;
@@ -111,5 +117,18 @@ message ClosePositionsResponse {
   bool success = 1;
   int32 closed_count = 2;
   string message = 3;
+}
+
+message AccountRequest {
+  string provider = 1;
+}
+
+message AccountDetailsResponse {
+  string provider = 1;
+  double equity = 2;
+  double cash = 3;
+  double buying_power = 4;
+  double portfolio_value = 5;
+  string timestamp = 6;
 }
 

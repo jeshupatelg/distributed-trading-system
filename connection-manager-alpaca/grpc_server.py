@@ -359,6 +359,54 @@ class OrderExecutionServicer(
             )
 
 
+class AccountServiceServicer(
+    connection_manager_pb2_grpc.AccountServiceServicer
+):
+    """
+    gRPC Servicer implementation for AccountService.
+    """
+
+    def __init__(self, rest_client: AlpacaRestClient):
+        """
+        Initialize servicer with REST client interface.
+        """
+        self.rest_client = rest_client
+        self.thread_pool = ThreadPoolExecutor(max_workers=5)
+        self.loop = asyncio.get_event_loop()
+
+    async def GetAccountDetails(self, request, context):
+        """
+        gRPC Unary method to fetch official account equity, cash, and buying power.
+        """
+        logger.info("GetAccountDetails request received for provider: %s", getattr(request, 'provider', 'default'))
+        try:
+            account = await self.loop.run_in_executor(
+                self.thread_pool,
+                self.rest_client.get_account,
+            )
+
+            equity = float(account.equity) if account.equity else 0.0
+            cash = float(account.cash) if account.cash else 0.0
+            buying_power = float(account.buying_power) if account.buying_power else 0.0
+            portfolio_value = float(account.portfolio_value) if hasattr(account, 'portfolio_value') and account.portfolio_value else equity
+
+            import datetime
+            timestamp_str = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+            return connection_manager_pb2.AccountDetailsResponse(
+                provider="alpaca",
+                equity=equity,
+                cash=cash,
+                buying_power=buying_power,
+                portfolio_value=portfolio_value,
+                timestamp=timestamp_str,
+            )
+        except Exception as e:
+            logger.error("Error retrieving account details from Alpaca: %s", e)
+            context.set_details(str(e))
+            context.set_code(grpc.StatusCode.INTERNAL)
+            return connection_manager_pb2.AccountDetailsResponse()
+
 
 async def start_grpc_server(
     broadcaster: gRPCStreamBroadcaster, rest_client: AlpacaRestClient
@@ -371,12 +419,16 @@ async def start_grpc_server(
     server = grpc.aio.server()
     market_servicer = MarketDataServicer(broadcaster, rest_client)
     order_servicer = OrderExecutionServicer(rest_client)
+    account_servicer = AccountServiceServicer(rest_client)
     
     connection_manager_pb2_grpc.add_MarketDataServiceServicer_to_server(
         market_servicer, server
     )
     connection_manager_pb2_grpc.add_OrderExecutionServiceServicer_to_server(
         order_servicer, server
+    )
+    connection_manager_pb2_grpc.add_AccountServiceServicer_to_server(
+        account_servicer, server
     )
 
     listen_addr = f"{config.HOST}:{config.PORT_GRPC}"

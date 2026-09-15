@@ -167,6 +167,16 @@ class AlpacaRestClient:
         logger.info("Querying order status for ID: %s", order_id)
         return self.client.get_order_by_id(order_id)
 
+    def get_account(self):
+        """
+        Retrieve real-time account details (equity, cash, buying_power, etc.) from Alpaca SDK.
+
+        Returns:
+            Account: The account object retrieved from Alpaca SDK.
+        """
+        logger.info("Querying account details from Alpaca API...")
+        return self.client.get_account()
+
     def get_historical_bars(self, symbol: str, limit: int):
         """
         Retrieve the latest historical minute bars for a ticker to support strategy warmup.

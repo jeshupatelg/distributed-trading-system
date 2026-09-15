@@ -67,7 +67,7 @@ public class RiskManager {
                     if (!p.isConfigComplete()) {
                         p.setActive(false);
                         redisTemplate.opsForValue().set(PROVIDER_STATUS_KEY_PREFIX + prov, "INACTIVE");
-                        log.warn("Provider '{}' configuration is INCOMPLETE (missing endpoint, timezone, or exchange). Marking INACTIVE.", prov);
+                        log.warn("Provider '{}' configuration is INCOMPLETE (missing endpoint, timezone, or exchange). Config: {}. Marking INACTIVE.", prov, formatSanitizedConfig(p));
                         continue;
                     }
                     log.info("Proactively probing provider connection manager health on startup: '{}'", prov);
@@ -80,7 +80,7 @@ public class RiskManager {
                     } else {
                         p.setActive(false);
                         redisTemplate.opsForValue().set(PROVIDER_STATUS_KEY_PREFIX + prov, "INACTIVE");
-                        log.warn("Provider '{}' connection manager is UNREACHABLE/UNHEALTHY. Status set to INACTIVE.", prov);
+                        log.warn("Provider '{}' connection manager is UNREACHABLE/UNHEALTHY. Config: {}. Status set to INACTIVE.", prov, formatSanitizedConfig(p));
                     }
                 }
             }
@@ -102,6 +102,18 @@ public class RiskManager {
         return null;
     }
 
+    private String formatSanitizedConfig(ProviderConfig config) {
+        if (config == null) {
+            return "null";
+        }
+        return "ProviderConfig{name='" + config.getName() + '\'' +
+                ", timezone='" + config.getTimezone() + '\'' +
+                ", exchange='" + config.getExchange() + '\'' +
+                ", enabled=" + config.isEnabled() +
+                ", active=" + config.isActive() +
+                ", isComplete=" + config.isConfigComplete() + '}';
+    }
+
     public void markProviderInactive(String provider) {
         String prov = normalizeProvider(provider);
         ProviderConfig config = findProviderConfig(prov);
@@ -109,7 +121,7 @@ public class RiskManager {
             config.setActive(false);
         }
         redisTemplate.opsForValue().set(PROVIDER_STATUS_KEY_PREFIX + prov, "INACTIVE");
-        log.warn("Marked provider '{}' INACTIVE in-memory and in Redis.", prov);
+        log.warn("Marked provider '{}' INACTIVE in-memory and in Redis. Config: {}", prov, formatSanitizedConfig(config));
     }
 
     public void markProviderActive(String provider) {
@@ -158,7 +170,7 @@ public class RiskManager {
 
         // Fast in-memory check (< 1µs) on ProviderConfig active flag and complete configuration
         if (config == null || !config.isConfigComplete() || !config.isActive() || redisTemplate.opsForValue().get(cashKey) == null) {
-            log.warn("RISK REJECTED: Provider '{}' configuration incomplete, inactive, or balance cache missing in Redis. Rejecting order {}", prov, orderId);
+            log.warn("RISK REJECTED: Provider '{}' configuration incomplete, inactive, or balance cache missing in Redis. Config: {}. Rejecting order {}", prov, formatSanitizedConfig(config), orderId);
             return new RiskDecision(false, "PROVIDER_UNINITIALIZED_OR_INACTIVE", "PROVIDER_HEALTH", estimatedCost, 0.0);
         }
 
