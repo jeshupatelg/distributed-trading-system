@@ -174,3 +174,17 @@ Deployment run of the Observability (OBS) stack changes for the `distributed-tra
   3. Added `9. Kafka Dispatch Error Ratio (%)` gauge panel (`id: 10`) to `connection_manager_metrics.json`.
   4. Updated `.agent/component_metrics_tracking.md` readiness matrix to set metric #9 to `LIVE`.
   5. Committed, pushed to `origin/master`, and deployed via outer-loop `git_sync_and_deploy`.
+
+### [2026-09-16T23:45:00+05:30] Success Op - Convert Signal Conversion Efficiency Panel to Timeseries Line Chart
+* **Intent**: Resolve static timerange visualization on Signal Conversion Efficiency panel
+* **Status**: Success (Code, Config & Deployment)
+* **Action**: Converted Panel 3 (`3. Signal Conversion Efficiency (%)`) in `signal_generator_metrics.json` from a static single-value `gauge` to a continuous `timeseries` line chart.
+* **Root Cause Analysis (RCA)**:
+  - Panel 3 was configured as a `gauge` with expression `(sum(rate(...[5m])) / sum(rate(...[5m]))) * 100`. In Grafana, Gauge panels reduce timeseries data by evaluating only the latest sample (`lastNotNull` at `now`).
+  - Because `now` is the end timestamp of any selected timerange (15m, 1h, 6h, 24h), the 5-minute sliding window `[5m]` was evaluated only at `[now-5m, now]`, outputting the identical instantaneous number regardless of which timerange was chosen in the dashboard time picker.
+* **Fix Applied**:
+  1. Converted panel type in `signal_generator_metrics.json` from `gauge` to `timeseries`.
+  2. Updated PromQL expression to `(sum by (ticker) (rate(strategy_signals_generated_total{instance=~"${strategy_runner}"}[5m])) / sum by (ticker) (rate(strategy_bars_processed_total{instance=~"${strategy_runner}"}[5m]))) * 100`.
+  3. Added legend formatting `Conversion % ({{ticker}})` and smooth line interpolation with 10% fill opacity.
+  4. Updated `.agent/component_metrics_tracking.md` visualization specification.
+  5. Synchronized files to remote Docker host and restarted Grafana container.

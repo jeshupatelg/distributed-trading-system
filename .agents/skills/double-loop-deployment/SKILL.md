@@ -81,3 +81,4 @@ list_running_containers()
 
 1. **New Projects / Containers:** If deploying a **NEW project or container** that is NOT returned by `list_whitelisted_containers()`, you MUST request explicit user approval before calling deployment tools.
 2. **Existing Whitelisted Projects:** For existing projects and containers already returned by `list_whitelisted_containers()`, inner-loop file syncs and test redeployments during active debugging are pre-authorized and exempt from extra approval prompts.
+3. **Protobuf & Recompiled Sources Exception:** Whenever there is a change in a proto file, developer recompiles python sources in all sharing services. Use direct inner loop deployment (`sync_project_files` and `deploy_compose_stack`) because of changed sources.

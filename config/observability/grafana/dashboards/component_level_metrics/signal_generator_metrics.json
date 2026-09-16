@@ -224,7 +224,7 @@
     },
     {
       "title": "3. Signal Conversion Efficiency (%)",
-      "type": "gauge",
+      "type": "timeseries",
       "datasource": {
         "type": "prometheus",
         "uid": "Prometheus"
@@ -243,23 +243,21 @@
             "uid": "Prometheus"
           },
           "editorMode": "code",
-          "expr": "(sum(rate(strategy_signals_generated_total{instance=~\"${strategy_runner}\"}[5m])) / sum(rate(strategy_bars_processed_total{instance=~\"${strategy_runner}\"}[5m]))) * 100",
-          "legendFormat": "Signal Conversion %",
+          "expr": "(sum by (ticker) (rate(strategy_signals_generated_total{instance=~\"${strategy_runner}\"}[5m])) / sum by (ticker) (rate(strategy_bars_processed_total{instance=~\"${strategy_runner}\"}[5m]))) * 100",
+          "legendFormat": "Conversion % ({{ticker}})",
           "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10
+          },
           "min": 0,
           "max": 100,
-          "unit": "percent",
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "blue", "value": null },
-              { "color": "green", "value": 0.1 }
-            ]
-          }
+          "unit": "percent"
         }
       }
     },
