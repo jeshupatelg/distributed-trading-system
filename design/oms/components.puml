@@ -1,0 +1,42 @@
+@startuml
+title OMS Component Architecture
+
+package "Order Management Service (OMS)" {
+    
+    interface "KafkaListener" as Listener
+    interface "JpaRepository" as Repo
+    interface "gRPC Stub" as GrpcClient
+    
+    component "OrderCreateConsumer" as OCC
+    component "OrderUpdateConsumer" as OUC
+    component "OrderResolutionService" as ORS
+    component "ReconciliationJob" as Cron
+    component "RedisStateAccessor" as RSA
+    component "KafkaPublisher" as Pub
+
+    Listener --> OCC : order-create-event
+    OCC --> Repo : INSERT (PENDING)
+    
+    Listener --> OUC : raw-order-update
+    OUC --> ORS : handle update
+    
+    ORS --> RSA : SREM pending, clear margin
+    ORS --> Repo : UPDATE (COMPLETED/FAILED)
+    ORS --> Pub : order-complete-event
+    
+    Cron --> RSA : SMEMBERS orders:pending
+    Cron --> GrpcClient : GetOrderStatus (Unary)
+    Cron --> ORS : route missed updates
+}
+
+database "SQL DB" as SQL
+database "Redis Cache" as Redis
+queue "Kafka Cluster" as Kafka
+node "Connection Managers" as CM
+
+Repo --> SQL : jdbc/hibernate
+RSA <--> Redis : read/write state
+Pub --> Kafka : produce
+GrpcClient --> CM : grpc proxy query
+
+@enduml

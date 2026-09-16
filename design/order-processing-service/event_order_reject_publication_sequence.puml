@@ -1,0 +1,74 @@
+@startuml
+title OPS - Event: OrderRejectEvent Publication
+
+autonumber
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+
+box "Order Processing Service (OPS)" #F8F9FA
+    participant "SignalConsumer" as SC
+    participant "ObjectMapper" as OM
+    participant "KafkaTemplate" as KT
+end box
+
+box "Kafka Bus" #E9ECEF
+    queue "trading.topics.order-reject" as Topic
+end box
+
+== Scenario A: Risk Gate Validation Breach ==
+
+note over SC
+  Triggered when Pre-Trade Risk Engine rejects signal:
+  - KILL_SWITCH
+  - PROVIDER_HEALTH
+  - DAILY_LOSS
+  - PRICE_COLLAR
+  - VELOCITY_SEC / VELOCITY_MIN
+  - SINGLE_ORDER_LIMIT
+  - PORTFOLIO_CONCENTRATION
+  - MARGIN_LOCK
+end note
+
+SC -> SC : new OrderRejectEvent(\n  clientOrderId,\n  signal.symbol(),\n  signal.qty(),\n  action,\n  signal.price(),\n  decision.calculatedCost(),\n  provider,\n  signal.strategy(),\n  decision.reason(),\n  decision.riskGateLevel(),\n  System.currentTimeMillis()\n)
+
+SC -> OM : writeValueAsString(rejectEvent)
+activate OM
+OM --> SC : rejectPayload
+deactivate OM
+
+SC -> KT : send(orderRejectTopic, clientOrderId, rejectPayload)
+activate KT
+KT -> Topic : publish rejection record [key: clientOrderId]
+activate Topic
+Topic --> KT : RecordMetadata
+deactivate Topic
+KT --> SC : ack
+deactivate KT
+
+== Scenario B: Downstream Broker Transmission Error ==
+
+note over SC
+  Triggered when gRPC placeOrder fails
+  (e.g., StatusRuntimeException, timeout):
+  1. Margin lock is reverted in Redis
+  2. Provider marked inactive
+  3. Rejection event published
+end note
+
+SC -> SC : new OrderRejectEvent(\n  clientOrderId,\n  ...,\n  "Broker transmission error: " + e.getMessage(),\n  "BROKER_ERROR",\n  System.currentTimeMillis()\n)
+
+SC -> OM : writeValueAsString(rejectEvent)
+activate OM
+OM --> SC : rejectPayload
+deactivate OM
+
+SC -> KT : send(orderRejectTopic, clientOrderId, rejectPayload)
+activate KT
+KT -> Topic : publish broker failure record [key: clientOrderId]
+activate Topic
+Topic --> KT : RecordMetadata
+deactivate Topic
+KT --> SC : ack
+deactivate KT
+
+@enduml

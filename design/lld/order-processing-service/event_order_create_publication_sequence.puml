@@ -1,0 +1,63 @@
+@startuml
+title OPS - Event: OrderCreateEvent Publication
+
+autonumber
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+
+box "Order Processing Service (OPS)" #F8F9FA
+    participant "SignalConsumer" as SC
+    participant "OrderExecutionClient" as OEC
+    participant "ObjectMapper" as OM
+    participant "KafkaTemplate" as KT
+end box
+
+box "External Infrastructure" #E9ECEF
+    participant "Connection Manager (gRPC)" as CM
+    queue "trading.topics.order-create" as Topic
+end box
+
+== gRPC Execution & Order Creation Egress Event ==
+
+SC -> OEC : placeOrder(provider, orderRequest)
+activate OEC
+OEC -> CM : OrderExecutionService.placeOrder(request)
+activate CM
+CM --> OEC : OrderResponse(orderId=brokerOrderId, status="NEW")
+deactivate CM
+OEC --> SC : OrderResponse
+deactivate OEC
+
+SC -> SC : brokerOrderId = response.getOrderId() != null ? response.getOrderId() : clientOrderId
+
+SC -> SC : new OrderCreateEvent(\n  brokerOrderId,\n  signal.symbol(),\n  signal.qty(),\n  action,\n  "market",\n  signal.price(),\n  provider,\n  signal.strategy()\n)
+
+SC -> OM : writeValueAsString(createEvent)
+activate OM
+OM --> SC : JSON String eventPayload
+deactivate OM
+
+SC -> KT : send(orderCreateTopic, brokerOrderId, eventPayload)
+activate KT
+KT -> Topic : publish record [key: brokerOrderId, value: eventPayload]
+activate Topic
+Topic --> KT : RecordMetadata (Partition, Offset)
+deactivate Topic
+KT --> SC : ListenableFuture / CompletableFuture
+deactivate KT
+
+note right of Topic
+  Event Schema:
+  {
+    "orderId": "broker-uuid",
+    "symbol": "AAPL",
+    "qty": 10,
+    "side": "BUY",
+    "orderType": "market",
+    "limitPrice": 150.25,
+    "provider": "alpaca",
+    "strategy": "mean_reversion"
+  }
+end note
+
+@enduml

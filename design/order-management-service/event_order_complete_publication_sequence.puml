@@ -1,0 +1,101 @@
+@startuml
+title OMS - Event: OrderCompleteEvent Publication & Cache Settlement
+
+autonumber
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+
+box "Order Management Service (OMS)" #F8F9FA
+    participant "OrderResolutionService" as ORS
+    participant "TrackedOrderRepository" as Repo
+    participant "ObjectMapper" as OM
+    participant "KafkaTemplate" as KT
+end box
+
+box "State & Message Bus" #E9ECEF
+    database "PostgreSQL" as DB
+    database "Redis" as Redis
+    queue "trading.topics.order-complete" as Topic
+end box
+
+== Transactional Resolution & Settle Flow ==
+
+[-> ORS : resolveOrder(orderId, status, filledQty, filledAvgPrice)
+activate ORS
+
+ORS -> Repo : findById(orderId)
+activate Repo
+Repo -> DB : SELECT * FROM tracked_orders WHERE order_id = ?
+activate DB
+DB --> Repo : TrackedOrder entity
+deactivate DB
+Repo --> ORS : order
+deactivate Repo
+
+alt Order Not Found in Database
+    ORS -> Redis : SREM orders:pending:{prov} orderId\nSREM orders:pending orderId
+    note right of Redis: Cache-only cleanup fallback
+    [<-- ORS : return
+end
+
+alt Order Already Resolved (status == "COMPLETED" || status == "FAILED")
+    ORS -> ORS : log.info("Idempotent skip; order already finalized.")
+    [<-- ORS : return
+end
+
+ORS -> ORS : estimatedCost = order.getQty() * order.getLimitPrice()
+
+== 1. Update Database Status ==
+
+ORS -> ORS : order.setStatus(status)
+ORS -> Repo : save(order)
+activate Repo
+Repo -> DB : UPDATE tracked_orders SET status = ?, updated_at = NOW() WHERE order_id = ?
+activate DB
+DB --> Repo : Updated
+deactivate DB
+Repo --> ORS : TrackedOrder
+deactivate Repo
+
+== 2. Settle Redis Caches ==
+
+group settleCache(order, estimatedCost, status, filledQty, filledAvgPrice)
+    ORS -> Redis : INCRBY balance:blocked:{prov} -estimatedCost\nINCRBY balance:blocked -estimatedCost
+    ORS -> Redis : SREM orders:pending:{prov} orderId\nSREM orders:pending orderId
+
+    opt Status == "COMPLETED" && filledQty > 0
+        ORS -> ORS : executionCost = filledAvgPrice * filledQty
+        alt Side == "BUY"
+            ORS -> Redis : INCRBY balance:cash:{prov} -executionCost\nINCRBY balance:cash -executionCost
+        else Side == "SELL"
+            ORS -> Redis : INCRBY balance:cash:{prov} +executionCost\nINCRBY balance:cash +executionCost
+        end
+
+        ORS -> Redis : GET positions:{prov}:{symbol}
+        ORS -> ORS : Calculate new position (BUY: +filledQty, SELL: -filledQty)
+        ORS -> Redis : SET positions:{prov}:{symbol} newPos\nSET positions:{symbol} newPos
+    end
+end group
+
+== 3. Emit Kafka order-complete-event ==
+
+ORS -> ORS : new OrderCompleteEvent(\n  order.getOrderId(),\n  order.getSymbol(),\n  order.getQty(),\n  order.getSide(),\n  status,\n  filledQty,\n  filledAvgPrice,\n  order.getProvider(),\n  order.getStrategy()\n)
+
+ORS -> OM : writeValueAsString(completeEvent)
+activate OM
+OM --> ORS : JSON payload
+deactivate OM
+
+ORS -> KT : send(orderCompleteTopic, order.getOrderId(), payload)
+activate KT
+KT -> Topic : publish record [key: orderId, value: payload]
+activate Topic
+Topic --> KT : RecordMetadata
+deactivate Topic
+KT --> ORS : ack
+deactivate KT
+
+[<-- ORS : resolution complete
+deactivate ORS
+
+@enduml

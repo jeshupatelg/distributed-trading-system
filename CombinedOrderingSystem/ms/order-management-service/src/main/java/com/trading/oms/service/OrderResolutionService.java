@@ -107,11 +107,11 @@ public class OrderResolutionService {
 
         // Clear blocked margin for provider
         redisTemplate.opsForValue().increment(blockedKey, -estimatedBlockedMargin);
-        redisTemplate.opsForValue().increment(BLOCKED_KEY, -estimatedBlockedMargin); // Legacy fallback
+        // redisTemplate.opsForValue().increment(BLOCKED_KEY, -estimatedBlockedMargin); // Obsolete legacy fallback - RiskManager only locks balance:blocked:{provider}
 
         // SREM orderId from pending set
         redisTemplate.opsForSet().remove(pendingOrdersKey, order.getOrderId());
-        redisTemplate.opsForSet().remove(PENDING_ORDERS_KEY, order.getOrderId());
+        // redisTemplate.opsForSet().remove(PENDING_ORDERS_KEY, order.getOrderId()); // Obsolete legacy fallback - RiskManager only adds to orders:pending:{provider}
 
         if ("COMPLETED".equals(status) && filledQty > 0) {
             double executionCost = filledAvgPrice * filledQty;
@@ -120,25 +120,20 @@ public class OrderResolutionService {
             // Settle cash per provider
             if ("BUY".equals(side)) {
                 redisTemplate.opsForValue().increment(cashKey, -executionCost);
-                redisTemplate.opsForValue().increment(CASH_KEY, -executionCost);
+                // redisTemplate.opsForValue().increment(CASH_KEY, -executionCost); // Obsolete legacy fallback - balance:cash:{provider} is canonical
             } else if ("SELL".equals(side)) {
                 redisTemplate.opsForValue().increment(cashKey, executionCost);
-                redisTemplate.opsForValue().increment(CASH_KEY, executionCost);
+                // redisTemplate.opsForValue().increment(CASH_KEY, executionCost); // Obsolete legacy fallback - balance:cash:{provider} is canonical
             }
 
             // Settle positions per provider
             String posKeyNamespaced = POSITION_KEY_PREFIX + provider + ":" + order.getSymbol().toUpperCase();
-            String posKeyLegacy = POSITION_KEY_PREFIX + order.getSymbol().toUpperCase();
 
             String currentPosStr = redisTemplate.opsForValue().get(posKeyNamespaced);
-            if (currentPosStr == null) {
-                currentPosStr = redisTemplate.opsForValue().get(posKeyLegacy);
-            }
             int currentPos = currentPosStr == null ? 0 : Integer.parseInt(currentPosStr);
             int newPos = "BUY".equals(side) ? currentPos + filledQty : currentPos - filledQty;
 
             redisTemplate.opsForValue().set(posKeyNamespaced, String.valueOf(newPos));
-            redisTemplate.opsForValue().set(posKeyLegacy, String.valueOf(newPos));
 
             log.info("Settled Redis cache for order {} (provider {}). Mutated cash by ${}, set position for {} to {}", 
                 order.getOrderId(), provider, ("BUY".equals(side) ? "-" : "+") + executionCost, order.getSymbol(), newPos);
@@ -148,7 +143,7 @@ public class OrderResolutionService {
     }
 
     private void settleCacheOnly(String orderId, String status, int filledQty, double filledAvgPrice) {
-        redisTemplate.opsForSet().remove(PENDING_ORDERS_KEY, orderId);
+        // redisTemplate.opsForSet().remove(PENDING_ORDERS_KEY, orderId); // Obsolete legacy fallback
         if (providerBeans != null) {
             for (ProviderConfig p : providerBeans) {
                 if (p.getName() != null && !p.getName().isBlank()) {

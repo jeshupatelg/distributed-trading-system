@@ -1,0 +1,78 @@
+@startuml
+title OMS - Startup & Infrastructure Initialization Sequence
+
+autonumber
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+
+box "Order Management Service (OMS)" #F8F9FA
+    participant "OrderManagementApplication" as App
+    participant "Spring TaskScheduler" as Scheduler
+    participant "ProviderHealthCheckJob" as PHJ
+    participant "ReconciliationJob" as RJ
+    participant "DailyEquityRefreshJob" as DERJ
+    participant "KafkaListenerContainer" as KLC
+    participant "OrderCreateConsumer" as OCC
+    participant "OrderUpdateConsumer" as OUC
+end box
+
+box "Storage & Message Brokers" #E9ECEF
+    database "PostgreSQL (HikariCP)" as DB
+    database "Redis" as Redis
+    queue "Kafka (order-create)" as K_Create
+    queue "Kafka (raw-updates)" as K_Updates
+end box
+
+== 1. Application Context & Database Connection Initialization ==
+
+App -> DB : Initialize HikariDataSource connection pool
+activate DB
+DB --> App : Pool active (PostgreSQL connected)
+deactivate DB
+
+App -> Redis : Connect Redis client (StringRedisTemplate)
+activate Redis
+Redis --> App : Connection established
+deactivate Redis
+
+== 2. Scheduled Job Registration ==
+
+App -> Scheduler : Initialize Spring TaskScheduler (@EnableScheduling)
+activate Scheduler
+
+Scheduler -> PHJ : Register checkAndRecoverInactiveProviders()\n[fixedDelay = 15000ms]
+activate PHJ
+PHJ --> Scheduler : Registered
+deactivate PHJ
+
+Scheduler -> RJ : Register reconcilePendingOrders()\n[fixedDelay = 30000ms]
+activate RJ
+RJ --> Scheduler : Registered
+deactivate RJ
+
+Scheduler -> DERJ : Register refreshDailyStartingEquity()\n[cron = "0 * * * * *" (every minute)]
+activate DERJ
+DERJ --> Scheduler : Registered
+deactivate DERJ
+
+== 3. Kafka Consumer Listener Registrations ==
+
+App -> KLC : Initialize Kafka message listener containers (@EnableKafka)
+activate KLC
+
+KLC -> K_Create : Subscribe OrderCreateConsumer\n(topic: "${trading.topics.order-create}", group: "oms-group")
+activate K_Create
+K_Create --> KLC : Subscribed
+deactivate K_Create
+
+KLC -> K_Updates : Subscribe OrderUpdateConsumer\n(topic: "${trading.topics.raw-updates}", group: "oms-group")
+activate K_Updates
+K_Updates --> KLC : Subscribed
+deactivate K_Updates
+
+KLC -> OCC : OrderCreateConsumer ready
+activate OCC
+KLC -> OUC : OrderUpdateConsumer ready
+activate OUC
+
+@enduml

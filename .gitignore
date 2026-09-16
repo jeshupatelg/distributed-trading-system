@@ -25,3 +25,5 @@ config-registry.md
 kafka-config.md
 redis-config.md
 redis_dump.csv
+redis*dump*.csv
+redis*comparison*.csv

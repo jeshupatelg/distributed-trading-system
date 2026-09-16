@@ -73,10 +73,13 @@ public class RiskManager {
                     log.info("Proactively probing provider connection manager health on startup: '{}'", prov);
                     boolean healthy = orderExecutionClient != null && orderExecutionClient.checkProviderHealth(prov);
                     if (healthy) {
-                        p.setActive(true);
-                        redisTemplate.opsForValue().set(PROVIDER_STATUS_KEY_PREFIX + prov, "ACTIVE");
-                        log.info("Provider '{}' connection manager is ACTIVE. Initializing Redis account cache.", prov);
-                        ensureAccountCache(prov);
+                        log.info("Provider '{}' connection manager is reachable. Performing Redis account cache init-check.", prov);
+                        boolean cacheValid = ensureAccountCache(prov);
+                        if (cacheValid) {
+                            p.setActive(true);
+                            redisTemplate.opsForValue().set(PROVIDER_STATUS_KEY_PREFIX + prov, "ACTIVE");
+                            log.info("Provider '{}' connection manager & account cache are ACTIVE.", prov);
+                        }
                     } else {
                         p.setActive(false);
                         redisTemplate.opsForValue().set(PROVIDER_STATUS_KEY_PREFIX + prov, "INACTIVE");
@@ -126,12 +129,15 @@ public class RiskManager {
 
     public void markProviderActive(String provider) {
         String prov = normalizeProvider(provider);
+        if (!ensureAccountCache(prov)) {
+            log.warn("Cannot mark provider '{}' ACTIVE: Redis account cache init-check failed.", prov);
+            return;
+        }
         ProviderConfig config = findProviderConfig(prov);
         if (config != null) {
             config.setActive(true);
         }
         redisTemplate.opsForValue().set(PROVIDER_STATUS_KEY_PREFIX + prov, "ACTIVE");
-        ensureAccountCache(prov);
         log.info("Marked provider '{}' ACTIVE in-memory and in Redis.", prov);
     }
 
@@ -415,26 +421,23 @@ public class RiskManager {
         log.info("Updated dynamic risk configuration in Redis for provider {}: {}", prov, newConfig);
     }
 
-    private void ensureAccountCache(String provider) {
+    private boolean ensureAccountCache(String provider) {
         String prov = normalizeProvider(provider);
         String cashKey = getProviderKey(CASH_KEY, prov);
         String blockedKey = getProviderKey(BLOCKED_KEY, prov);
         String startingEquityKey = getProviderKey(STARTING_EQUITY_KEY, prov);
 
-        if (redisTemplate.opsForValue().get(cashKey) == null) {
-            String legacyCash = redisTemplate.opsForValue().get(CASH_KEY);
-            if (legacyCash != null) {
-                redisTemplate.opsForValue().set(cashKey, legacyCash);
-                redisTemplate.opsForValue().set(blockedKey, "0.0");
-                redisTemplate.opsForValue().set(startingEquityKey, legacyCash);
-            }
+        String cash = redisTemplate.opsForValue().get(cashKey);
+        String blocked = redisTemplate.opsForValue().get(blockedKey);
+        String startingEquity = redisTemplate.opsForValue().get(startingEquityKey);
+
+        if (cash == null || blocked == null || startingEquity == null) {
+            log.warn("Account cache init-check FAILED for provider '{}'. Missing Redis state keys (cash={}, blocked={}, startingEquity={}). Marking provider INACTIVE.",
+                prov, cash != null, blocked != null, startingEquity != null);
+            markProviderInactive(prov);
+            return false;
         }
-        if (redisTemplate.opsForValue().get(startingEquityKey) == null) {
-            String cash = redisTemplate.opsForValue().get(cashKey);
-            if (cash != null) {
-                redisTemplate.opsForValue().set(startingEquityKey, cash);
-            }
-        }
+        return true;
     }
 
     private double calculateOpenPositionsValue(String provider) {

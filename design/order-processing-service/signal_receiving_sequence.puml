@@ -1,0 +1,151 @@
+@startuml
+title OPS - Trading Signal Receiving & Pre-Trade Risk Evaluation Sequence
+
+autonumber
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+
+box "External Ingestion" #E9ECEF
+    queue "Kafka (signals topic)" as K_Sig
+end box
+
+box "Order Processing Service (OPS)" #F8F9FA
+    participant "SignalConsumer" as SC
+    participant "RiskManager" as RM
+    participant "OrderExecutionClient" as OEC
+end box
+
+box "State & Broker Infrastructure" #E9ECEF
+    database "Redis" as Redis
+    participant "Connection Manager (gRPC)" as CM
+    queue "Kafka (order-create topic)" as K_Create
+    queue "Kafka (order-reject topic)" as K_Reject
+end box
+
+== 1. Signal Ingestion & Payload Validation ==
+
+K_Sig -> SC : consumeSignal(String message)
+activate SC
+
+SC -> SC : objectMapper.readValue(message, SignalEvent.class)
+
+opt Payload Validation Failure (symbol == null || qty <= 0 || action !in [BUY, SELL] || provider blank)
+    SC -> SC : log.warn / log.error & abort
+end
+
+SC -> SC : clientOrderId = UUID.randomUUID().toString()
+
+== 2. Comprehensive Pre-Trade Risk Firewall Evaluation ==
+
+SC -> RM : evaluateAndLock(clientOrderId, symbol, qty, price, action, provider)
+activate RM
+
+RM -> Redis : GET system:kill_switch\nGET system:kill_switch:{prov}
+alt Kill Switch ACTIVE
+    RM --> SC : RiskDecision(approved=false, reason="KILL_SWITCH_ACTIVE", gate="KILL_SWITCH")
+end
+
+RM -> RM : Check ProviderConfig: isConfigComplete() && isActive()
+RM -> Redis : GET balance:cash:{prov}
+alt Provider Inactive or Cache Missing
+    RM --> SC : RiskDecision(approved=false, reason="PROVIDER_UNINITIALIZED_OR_INACTIVE", gate="PROVIDER_HEALTH")
+end
+
+group Daily Loss Limit Gate
+    RM -> Redis : GET risk:config:max_daily_loss:{prov}
+    RM -> Redis : GET balance:starting_equity:{prov}\nGET balance:cash:{prov}\nGET balance:blocked:{prov}
+    RM -> Redis : KEYS positions:{prov}:* + market:last_price:{prov}:*
+    RM -> RM : totalEquity = cash + openPositionsVal\ndrawdown = startingEquity - totalEquity
+    alt drawdown >= maxDailyLoss
+        RM --> SC : RiskDecision(approved=false, reason="DAILY_LOSS_LIMIT_EXCEEDED", gate="DAILY_LOSS")
+    end
+end
+
+group Price Collar Gate
+    RM -> Redis : GET market:last_price:{prov}:{symbol}
+    opt Price Deviation > price_collar_pct
+        RM --> SC : RiskDecision(approved=false, reason="PRICE_COLLAR_VIOLATION", gate="PRICE_COLLAR")
+    end
+end
+
+group Velocity Rate Limiting Gate
+    RM -> Redis : INCR risk:velocity:sec:{prov}:{nowSec} (expire 2s)\nINCR risk:velocity:min:{prov}:{nowMin} (expire 120s)
+    alt Velocity Exceeded
+        RM --> SC : RiskDecision(approved=false, reason="VELOCITY_EXCEEDED", gate="VELOCITY")
+    end
+end
+
+group Single Order & Portfolio Concentration Gates
+    RM -> Redis : GET risk:config:max_order_qty:{prov}\nGET risk:config:max_order_val:{prov}
+    alt qty > maxOrderQty || estimatedCost > maxOrderVal
+        RM --> SC : RiskDecision(approved=false, reason="MAX_ORDER_LIMIT_EXCEEDED", gate="SINGLE_ORDER_LIMIT")
+    end
+    RM -> Redis : GET risk:config:max_concentration_pct:{prov}
+    alt estimatedCost > totalEquity * concentrationPct
+        RM --> SC : RiskDecision(approved=false, reason="MAX_CONCENTRATION_EXCEEDED", gate="PORTFOLIO_CONCENTRATION")
+    end
+end
+
+group Margin Availability & Locking
+    RM -> RM : availableCash = currentCash - blockedMargin
+    alt availableCash < estimatedCost
+        RM --> SC : RiskDecision(approved=false, reason="INSUFFICIENT_MARGIN", gate="MARGIN_LOCK")
+    else Sufficient Margin
+        RM -> Redis : INCRBY balance:blocked:{prov} estimatedCost
+        RM -> Redis : SADD orders:pending:{prov} clientOrderId
+        RM -> RM : Calculate stopLossPrice based on stop_loss_pct
+        RM --> SC : RiskDecision(approved=true, reason="APPROVED", stopLossPrice)
+    end
+end
+deactivate RM
+
+== 3. Branch: Risk Rejection vs Execution ==
+
+alt Risk Check REJECTED
+    SC -> SC : Construct OrderRejectEvent(clientOrderId, symbol, qty, action, price, reason, gate, ...)
+    SC -> K_Reject : kafkaTemplate.send(orderRejectTopic, clientOrderId, payload)
+
+else Risk Check APPROVED
+
+    SC -> SC : Build OrderRequest(symbol, qty, side, orderType="market", productType="DAY", stopLossPrice)
+    SC -> OEC : placeOrder(provider, orderRequest)
+    activate OEC
+
+    OEC -> CM : OrderExecutionService.placeOrder(OrderRequest)
+    activate CM
+
+    alt gRPC Order Placement SUCCESS
+        CM --> OEC : OrderResponse(orderId=brokerOrderId, status="NEW")
+        deactivate CM
+        OEC --> SC : OrderResponse
+        deactivate OEC
+
+        SC -> SC : Construct OrderCreateEvent(brokerOrderId, symbol, qty, action, "market", price, provider, strategy)
+        SC -> K_Create : kafkaTemplate.send(orderCreateTopic, brokerOrderId, payload)
+
+    else Broker Transmission / Timeout Error
+        CM --> OEC : StatusRuntimeException (e.g., UNAVAILABLE / DEADLINE_EXCEEDED)
+        activate CM
+        deactivate CM
+        activate OEC
+        OEC -> RM : markProviderInactive(provider)
+        OEC --> SC : throws StatusRuntimeException
+        deactivate OEC
+
+        group Revert Margin Lock
+            SC -> RM : revertLock(clientOrderId, estimatedCost, provider)
+            activate RM
+            RM -> Redis : INCRBY balance:blocked:{prov} -estimatedCost
+            RM -> Redis : SREM orders:pending:{prov} clientOrderId
+            deactivate RM
+        end
+
+        SC -> SC : Construct OrderRejectEvent(clientOrderId, reason="Broker transmission error", gate="BROKER_ERROR")
+        SC -> K_Reject : kafkaTemplate.send(orderRejectTopic, clientOrderId, payload)
+    end
+
+end
+
+deactivate SC
+
+@enduml

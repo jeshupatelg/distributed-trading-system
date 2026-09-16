@@ -1,0 +1,95 @@
+@startuml
+title OPS - Startup & Provider Initialization Sequence
+
+autonumber
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+
+box "Order Processing Service (OPS)" #F8F9FA
+    participant "OrderProcessingApplication" as App
+    participant "ProviderConfiguration" as ProvConfig
+    participant "RiskManager" as RM
+    participant "OrderExecutionClient" as OEC
+    participant "KafkaListenerContainer" as KLC
+    participant "SignalConsumer" as SC
+end box
+
+box "External Infrastructure" #E9ECEF
+    participant "Connection Manager (gRPC)" as CM
+    database "Redis" as Redis
+    queue "Kafka (signals topic)" as Kafka
+end box
+
+== Application Boot & Configuration Loading ==
+
+App -> ProvConfig : Load registered ProviderConfig beans
+activate ProvConfig
+ProvConfig --> App : List<ProviderConfig> (e.g., alpaca, megabull)
+deactivate ProvConfig
+
+App -> RM : Instantiate RiskManager(redisTemplate, providerBeans, orderExecutionClient)
+activate RM
+App -> OEC : Instantiate OrderExecutionClient(providerBeans, riskManager)
+activate OEC
+
+== PostConstruct Cache & Connectivity Initialization ==
+
+App -> RM : @PostConstruct initAccountCaches()
+
+loop for each ProviderConfig p in providerBeans
+    RM -> RM : prov = p.getName().toLowerCase().trim()
+
+    alt Configuration is INCOMPLETE (missing endpoint, timezone, or exchange)
+        RM -> RM : p.setActive(false)
+        RM -> Redis : SET provider:status:{prov} "INACTIVE"
+        note right of RM: Provider is incomplete;\nskip health probing.
+    else Configuration is Complete
+        RM -> OEC : checkProviderHealth(prov)
+        OEC -> CM : Inspect ManagedChannel.getState(true)
+        activate CM
+        CM --> OEC : ConnectivityState (READY / IDLE / TRANSIENT_FAILURE)
+        deactivate CM
+
+        alt gRPC Connectivity is HEALTHY
+            OEC --> RM : healthy = true
+            RM -> RM : p.setActive(true)
+            RM -> Redis : SET provider:status:{prov} "ACTIVE"
+
+            group ensureAccountCache(prov)
+                RM -> Redis : GET balance:cash:{prov}
+                alt Cache Entry Absent
+                    RM -> Redis : GET balance:cash (legacy fallback)
+                    opt Legacy cash exists
+                        RM -> Redis : SET balance:cash:{prov} {legacyCash}
+                        RM -> Redis : SET balance:blocked:{prov} "0.0"
+                        RM -> Redis : SET balance:starting_equity:{prov} {legacyCash}
+                    end
+                end
+                RM -> Redis : GET balance:starting_equity:{prov}
+                opt Starting equity absent
+                    RM -> Redis : SET balance:starting_equity:{prov} {cash}
+                end
+            end group
+
+        else gRPC Connectivity is UNHEALTHY / Unreachable
+            OEC --> RM : healthy = false
+            RM -> RM : p.setActive(false)
+            RM -> Redis : SET provider:status:{prov} "INACTIVE"
+            note right of RM: Marked INACTIVE.\nWill be evaluated during periodic health check.
+        end
+    end
+end
+
+== Kafka Signal Ingestion Subscription ==
+
+App -> KLC : Initialize Kafka Listener Containers
+activate KLC
+KLC -> Kafka : Subscribe SignalConsumer (topic: "${trading.topics.signals}", groupId: "ops-group")
+activate Kafka
+Kafka --> KLC : Subscription Confirmed
+deactivate Kafka
+
+KLC -> SC : SignalConsumer is ready to accept events
+activate SC
+
+@enduml

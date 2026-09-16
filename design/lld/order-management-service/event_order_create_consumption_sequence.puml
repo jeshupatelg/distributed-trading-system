@@ -1,0 +1,67 @@
+@startuml
+title OMS - Event: OrderCreateEvent Consumption
+
+autonumber
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+
+box "Kafka Bus" #E9ECEF
+    queue "trading.topics.order-create" as Topic
+end box
+
+box "Order Management Service (OMS)" #F8F9FA
+    participant "KafkaMessageListener" as KML
+    participant "OrderCreateConsumer" as OCC
+    participant "ObjectMapper" as OM
+    participant "TrackedOrderRepository" as Repo
+end box
+
+box "Persistent Store" #E9ECEF
+    database "PostgreSQL (tracked_orders)" as DB
+end box
+
+== Order Creation Ingestion Event ==
+
+Topic -> KML : poll() delivers message
+activate KML
+KML -> OCC : consumeOrderCreate(String message)
+activate OCC
+
+OCC -> OM : readValue(message, OrderCreateEvent.class)
+activate OM
+OM --> OCC : OrderCreateEvent(\n  orderId, symbol, qty, side, orderType,\n  limitPrice, provider, strategy\n)
+deactivate OM
+
+opt Validation Check: orderId == null || symbol == null
+    OCC -> OCC : log.warn; return
+end
+
+OCC -> Repo : existsById(event.orderId())
+activate Repo
+Repo -> DB : SELECT EXISTS(SELECT 1 FROM tracked_orders WHERE order_id = ?)
+activate DB
+DB --> Repo : exists: boolean
+deactivate DB
+Repo --> OCC : exists
+deactivate Repo
+
+alt Order Already Exists (Idempotent Skip)
+    OCC -> OCC : log.info("Order already exists. Skipping creation."); return
+else Order Does NOT Exist
+    OCC -> OCC : TrackedOrder order = new TrackedOrder()\norder.setOrderId(event.orderId())\norder.setSymbol(event.symbol())\norder.setQty(event.qty())\norder.setSide(event.side())\norder.setOrderType(event.orderType())\norder.setLimitPrice(event.limitPrice())\norder.setStatus("PENDING")\norder.setProvider(event.provider())\norder.setStrategy(event.strategy())\norder.setFilledQty(0)\norder.setFilledAvgPrice(0.0)
+
+    OCC -> Repo : save(order)
+    activate Repo
+    Repo -> DB : INSERT INTO tracked_orders (...) VALUES (...)
+    activate DB
+    DB --> Repo : Success
+    deactivate DB
+    Repo --> OCC : Saved TrackedOrder
+    deactivate Repo
+    OCC -> OCC : log.info("Saved initial PENDING order record for ID: {}", orderId)
+end
+
+deactivate OCC
+deactivate KML
+
+@enduml

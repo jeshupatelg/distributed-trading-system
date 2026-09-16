@@ -1,0 +1,87 @@
+@startuml
+title OPS - Comprehensive Execution Sequences
+
+autonumber
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+
+box "Order Processing Service (OPS)" #F8F9FA
+    participant "OrderProcessingApplication" as App
+    participant "SignalConsumer" as SC
+    participant "RiskManager" as RM
+    participant "OrderExecutionClient" as OEC
+end box
+
+box "External Systems & State" #E9ECEF
+    participant "Connection Manager (gRPC)" as CM
+    database "Redis" as Redis
+    queue "Kafka (signals)" as K_Sig
+    queue "Kafka (order-create)" as K_Create
+    queue "Kafka (order-reject)" as K_Reject
+end box
+
+== 1. Startup & Cache Initialization ==
+
+App -> RM : @PostConstruct initAccountCaches()
+activate RM
+loop for each registered ProviderConfig
+    RM -> OEC : checkProviderHealth(provider)
+    activate OEC
+    OEC -> CM : channel.getState()
+    CM --> OEC : ConnectivityState
+    OEC --> RM : healthy
+    deactivate OEC
+    alt Provider is Healthy
+        RM -> Redis : SET provider:status:{prov} "ACTIVE"
+        RM -> Redis : Initialize balance:cash:{prov}, blocked, starting_equity
+    else Incomplete or Unhealthy
+        RM -> Redis : SET provider:status:{prov} "INACTIVE"
+    end
+end
+deactivate RM
+
+== 2. Signal Ingestion & Pre-Trade Risk Evaluation ==
+
+K_Sig -> SC : consumeSignal(SignalEvent payload)
+activate SC
+SC -> RM : evaluateAndLock(orderId, symbol, qty, price, action, provider)
+activate RM
+
+RM -> Redis : Check kill switch, daily drawdown, price collar, velocity, margin
+alt All 7 Risk Gates Pass
+    RM -> Redis : INCRBY balance:blocked:{prov} estimatedCost
+    RM -> Redis : SADD orders:pending:{prov} clientOrderId
+    RM --> SC : RiskDecision(approved=true, stopLossPrice)
+else Gate Breach
+    RM --> SC : RiskDecision(approved=false, reason, gate)
+end
+deactivate RM
+
+== 3. Event Dispatches ==
+
+alt Risk Approved
+    SC -> OEC : placeOrder(provider, orderRequest)
+    activate OEC
+    OEC -> CM : gRPC placeOrder(OrderRequest)
+    activate CM
+    alt Broker PlaceOrder Success
+        CM --> OEC : OrderResponse(brokerOrderId)
+        OEC --> SC : OrderResponse
+        SC -> K_Create : Publish OrderCreateEvent(brokerOrderId, ...)
+    else Broker Transmission Error
+        CM --> OEC : StatusRuntimeException
+        deactivate CM
+        OEC --> SC : exception
+        deactivate OEC
+        SC -> RM : revertLock(clientOrderId, cost, provider)
+        activate RM
+        RM -> Redis : INCRBY balance:blocked -cost, SREM orders:pending
+        deactivate RM
+        SC -> K_Reject : Publish OrderRejectEvent(BROKER_ERROR)
+    end
+else Risk Rejected
+    SC -> K_Reject : Publish OrderRejectEvent(RISK_REJECTION)
+end
+deactivate SC
+
+@enduml

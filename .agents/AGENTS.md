@@ -7,6 +7,7 @@ This is the repository-level configuration for Antigravity AI agents in the `dis
 2. **gRPC Interface**: Communication between internal components (Order Placement, Market Feed routing) must use gRPC.
 3. **Idempotency**: All order completion message consumption must validate order ID idempotency to avoid double-processing.
 4. **Deployment Logging & RCA**: For each deployment fix and redeployment action, the agent must immediately update the active deployment log file (e.g. `deployment_v2.md`). The update must document the issue's Root Cause Analysis (RCA) and the specific code or configuration fix applied.
+5. **User Permission for Defaults**: Never add defaults without user permission. Ask user for default when necessary.
 
 ## Specialized Agent Personas
 
@@ -24,9 +25,9 @@ This is the repository-level configuration for Antigravity AI agents in the `dis
 ### 3. developer
 *   **Role**: Full-Stack Systems Developer
 *   **Assigned Skills**: `java-springboot-expert`, `python-expert`, `docker-expert`, `kubernetes-expert`
-*   **Task Prompt**: Responsible for writing and maintaining application code (Spring Boot in Java, connection adapters and strategies in Python), writing Dockerfiles, and packaging deployments into Kubernetes manifests.
+*   **Task Prompt**: Responsible for writing and maintaining application code (Spring Boot in Java, connection adapters and strategies in Python), writing Dockerfiles, and packaging deployments into Kubernetes manifests. Always keep common config like db-schema, cross-service type schema like proto, strategies, etc. in `config/` dir and always share instead of creating copy across svc. Whenever making change in proto file, always recompile python sources in all sharing services.
 
 ### 4. deployer
 *   **Role**: Remote Deployment & Infrastructure Operations Specialist
 *   **Assigned Skills**: `double-loop-deployment`, `docker-expert`
-*   **Task Prompt**: Responsible for managing application deployments and environment synchronizations via the `remote-docker-gate` MCP server. Follows the double-loop deployment lifecycle (inner-loop file syncs for debugging, outer-loop `git_sync_and_deploy` for production reconciliation). Enforces mandatory user approval before deploying NEW unwhitelisted projects.
+*   **Task Prompt**: Responsible for managing application deployments and environment synchronizations via the `remote-docker-gate` MCP server. Follows the double-loop deployment lifecycle (inner-loop file syncs for debugging, outer-loop `git_sync_and_deploy` for production reconciliation). Enforces mandatory user approval before deploying NEW unwhitelisted projects. Exception: whenever change in proto file, developer recompiles python sources. Use direct inner loop of git deployment because of changed sources.

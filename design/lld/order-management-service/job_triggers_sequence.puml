@@ -1,0 +1,154 @@
+@startuml
+title OMS - Scheduled Job Triggers & Reconciliation Sequence
+
+autonumber
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+
+box "Spring TaskScheduler" #F8F9FA
+    participant "Scheduler" as Sched
+end box
+
+box "OMS Scheduled Jobs & Services" #F8F9FA
+    participant "ReconciliationJob" as RJ
+    participant "DailyEquityRefreshJob" as DERJ
+    participant "ProviderHealthCheckJob" as PHJ
+    participant "EquityReconciliationService" as ERS
+    participant "ReconciliationClient" as RC
+    participant "OrderResolutionService" as ORS
+end box
+
+box "Storage & Gateway" #E9ECEF
+    database "PostgreSQL" as DB
+    database "Redis" as Redis
+    participant "Connection Manager (gRPC)" as CM
+    queue "Kafka (order-complete)" as K_Comp
+end box
+
+== Job 1: ReconciliationJob (Fixed Delay: 30s) ==
+
+Sched -> RJ : reconcilePendingOrders()
+activate RJ
+
+RJ -> DB : orderRepository.findByStatus("PENDING")
+activate DB
+DB --> RJ : List<TrackedOrder> pendingOrders
+deactivate DB
+
+loop for each TrackedOrder in pendingOrders
+    RJ -> RC : getOrderStatus(provider, orderId)
+    activate RC
+    RC -> CM : gRPC OrderExecutionService.getOrderStatus(OrderStatusRequest)
+    activate CM
+    CM --> RC : OrderStatusResponse(status, filledQty, filledAvgPrice)
+    deactivate CM
+    RC --> RJ : OrderStatusResponse
+    deactivate RC
+
+    alt brokerStatus in {"filled", "completed"}
+        RJ -> ORS : resolveOrder(orderId, "COMPLETED", filledQty, filledAvgPrice)
+        activate ORS
+        ORS -> DB : Update status = "COMPLETED"
+        ORS -> Redis : Settle blocked margin, pending set, cash & positions
+        ORS -> K_Comp : Publish OrderCompleteEvent
+        deactivate ORS
+    else brokerStatus in {"canceled", "rejected", "expired"}
+        RJ -> ORS : resolveOrder(orderId, "FAILED", filledQty, filledAvgPrice)
+        activate ORS
+        ORS -> DB : Update status = "FAILED"
+        ORS -> Redis : Revert blocked margin, remove from pending set
+        ORS -> K_Comp : Publish OrderCompleteEvent
+        deactivate ORS
+    else brokerStatus in {"new", "partially_filled"}
+        RJ -> RJ : Log active state; order remains PENDING
+    end
+end
+deactivate RJ
+
+== Job 2: DailyEquityRefreshJob (Cron: Every Minute) ==
+
+Sched -> DERJ : refreshDailyStartingEquity()
+activate DERJ
+
+loop for each ProviderConfig p in providerBeans
+    opt p.isConfigComplete()
+        DERJ -> DERJ : localDate = LocalDate.now(ZoneId.of(p.getTimezone()))
+        DERJ -> Redis : GET balance:last_reset_date:{prov}
+        activate Redis
+        Redis --> DERJ : lastResetDate
+        deactivate Redis
+
+        alt localDate != lastResetDate (Midnight Rollover Detected)
+            DERJ -> ERS : reconcileDailyStartingEquity(p, localDate)
+            activate ERS
+
+            ERS -> RC : getAccountDetails(prov)
+            activate RC
+            RC -> CM : gRPC AccountService.getAccountDetails(AccountRequest)
+            activate CM
+
+            alt gRPC Success & equity > 0.0
+                CM --> RC : AccountDetailsResponse(equity, cash)
+                deactivate CM
+                RC --> ERS : AccountDetailsResponse
+                deactivate RC
+
+                ERS -> Redis : SET balance:starting_equity:{prov} {brokerEquity}
+                ERS -> Redis : SET balance:cash:{prov} {brokerCash}
+                ERS -> Redis : SET balance:last_reset_date:{prov} {localDate}
+            else gRPC Failure / Zero Equity Returned
+                CM --> RC : Error / Unavailable
+                activate CM
+                deactivate CM
+                activate RC
+                RC --> ERS : Exception thrown
+                deactivate RC
+
+                group Fallback Internal Reset
+                    ERS -> Redis : GET balance:cash:{prov}
+                    ERS -> Redis : KEYS positions:{prov}:* + market:last_price:*
+                    ERS -> ERS : closingEquity = cash + openPositionsVal
+                    ERS -> Redis : SET balance:starting_equity:{prov} {closingEquity}
+                    ERS -> Redis : SET balance:last_reset_date:{prov} {localDate}
+                end group
+            end
+            deactivate ERS
+        end
+    end
+end
+deactivate DERJ
+
+== Job 3: ProviderHealthCheckJob (Fixed Delay: 15s) ==
+
+Sched -> PHJ : checkAndRecoverInactiveProviders()
+activate PHJ
+
+loop for each ProviderConfig p in providerBeans
+    opt p.isConfigComplete()
+        PHJ -> Redis : GET provider:status:{prov}
+        activate Redis
+        Redis --> PHJ : currentStatus
+        deactivate Redis
+
+        alt currentStatus == "INACTIVE" || !p.isActive()
+            PHJ -> RC : checkHealth(prov)
+            activate RC
+            RC -> CM : Channel.getState(true)
+            activate CM
+            CM --> RC : state
+            deactivate CM
+            RC --> PHJ : healthy
+            deactivate RC
+
+            alt healthy == true
+                PHJ -> PHJ : p.setActive(true)
+                PHJ -> Redis : SET provider:status:{prov} "ACTIVE"
+            else healthy == false
+                PHJ -> PHJ : Retain INACTIVE status; retry next cycle
+            end
+        end
+    end
+end
+deactivate PHJ
+
+@enduml

@@ -290,5 +290,16 @@ Second deployment run of the `distributed-trading-system` microservices stack, u
   6. Regenerated Python Protobuf stubs for `connection-manager-alpaca`, `signal-generator`, and `price-cache-service`.
   7. Untracked `config-registry.md`, `kafka-config.md`, and `redis-config.md` while keeping local files and ignoring them in `.gitignore`.
 
+### [2026-09-16T22:45:00+05:30] Deployment 21: Removal of Obsolete Unnamespaced Fallbacks & RiskManager Account Cache Init-Check Refactoring
+* **Issue**: Unnamespaced Redis key fallback operations in `OrderResolutionService` caused `balance:blocked` to drift negative (`-38883.02`), while `RiskManager.ensureAccountCache` contained legacy fallback copy logic that attempted to copy unnamespaced keys into namespaced keys.
+* **Root Cause Analysis (RCA)**:
+  1. In v2 multi-broker namespacing architecture, `RiskManager` locks margin strictly using provider-namespaced keys (e.g. `balance:blocked:alpaca`). In `OrderResolutionService`, legacy fallback `redisTemplate.opsForValue().increment(BLOCKED_KEY, -estimatedBlockedMargin)` decremented `balance:blocked` on every order resolution without it ever being incremented during pre-trade risk lock.
+  2. `RiskManager.ensureAccountCache` contained fallback copy logic from legacy unnamespaced `balance:cash` to namespaced keys rather than validating proper account balance initialization.
+* **Fix Applied**:
+  1. Updated [`OrderResolutionService.java`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/ms/order-management-service/src/main/java/com/trading/oms/service/OrderResolutionService.java): Commented out obsolete unnamespaced legacy fallback operations (`balance:blocked`, `orders:pending`, `balance:cash`, `positions:{symbol}`).
+  2. Updated [`RiskManager.java`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/ms/order-processing-service/src/main/java/com/trading/ops/service/RiskManager.java): Refactored `ensureAccountCache` into a strict init-check validating the presence of `balance:cash:{provider}`, `balance:blocked:{provider}`, and `balance:starting_equity:{provider}` in Redis. If any key is missing, logs a warning and automatically marks the provider `INACTIVE`.
+  3. Updated [`ADR 0012`](file:///c:/Users/jeshu/Projects/distributed-trading-system/.agents/adr/0012-decoupled-price-cache-service.md): Formally documented the dual-tiered reference price lookup hierarchy (`LAST_PRICE_KEY_PREFIX`).
+
+
 
 

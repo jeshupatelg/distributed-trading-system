@@ -35,3 +35,6 @@ When developing, debugging, or deploying applications using `remote-docker-gate`
 
 ### Exemption for Whitelisted In-Prompt Test Steps
 * **Exemption:** For existing projects and containers already registered and returned by `list_whitelisted_containers()`, you DO NOT need to prompt for permission for routine `sync_project_files` or `deploy_compose_stack` test steps during an active inner-loop debugging session.
+
+### Exception for Protobuf Changes
+* **Exception:** Whenever there is a change in a proto file, developer recompiles python sources in all sharing services. Use direct inner loop of deployment (`sync_project_files` and `deploy_compose_stack`) because of changed sources.

@@ -1,0 +1,58 @@
+@startuml
+title OMS - Event: RawOrderUpdate Consumption & Resolution Dispatch
+
+autonumber
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+
+box "Kafka Bus" #E9ECEF
+    queue "trading.topics.raw-updates" as Topic
+end box
+
+box "Order Management Service (OMS)" #F8F9FA
+    participant "KafkaMessageListener" as KML
+    participant "OrderUpdateConsumer" as OUC
+    participant "ObjectMapper" as OM
+    participant "OrderResolutionService" as ORS
+end box
+
+== Broker Order Update Ingestion Event ==
+
+Topic -> KML : poll() delivers message
+activate KML
+KML -> OUC : consumeOrderUpdate(String message)
+activate OUC
+
+OUC -> OM : readValue(message, RawOrderUpdate.class)
+activate OM
+OM --> OUC : RawOrderUpdate(order: RawOrder(id, status, filledQty, filledAvgPrice))
+deactivate OM
+
+opt Validation Check: update.order() == null || update.order().id() == null
+    OUC -> OUC : log.warn; return
+end
+
+OUC -> OUC : Parse filledQty & filledAvgPrice\nNormalize status.toLowerCase()
+
+alt status in {"filled", "completed"}
+    OUC -> ORS : resolveOrder(orderId, "COMPLETED", filledQty, filledAvgPrice)
+    activate ORS
+    note right of ORS: Updates DB, settles Redis,\npublishes order-complete-event
+    ORS --> OUC : Done
+    deactivate ORS
+
+else status in {"canceled", "rejected", "expired"}
+    OUC -> ORS : resolveOrder(orderId, "FAILED", filledQty, filledAvgPrice)
+    activate ORS
+    note right of ORS: Updates DB to FAILED,\nclears blocked margin in Redis
+    ORS --> OUC : Done
+    deactivate ORS
+
+else Non-Terminal Status (e.g., "new", "partially_filled", "accepted")
+    OUC -> OUC : log.info("Order in non-terminal status. Skipping resolution.")
+end
+
+deactivate OUC
+deactivate KML
+
+@enduml

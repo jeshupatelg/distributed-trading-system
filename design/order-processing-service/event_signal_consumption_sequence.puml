@@ -1,0 +1,51 @@
+@startuml
+title OPS - Event: SignalEvent Consumption
+
+autonumber
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+
+box "Kafka Bus" #E9ECEF
+    queue "trading.topics.signals" as Topic
+end box
+
+box "Order Processing Service (OPS)" #F8F9FA
+    participant "KafkaMessageListener" as KML
+    participant "SignalConsumer" as SC
+    participant "ObjectMapper" as OM
+    participant "RiskManager" as RM
+end box
+
+== Kafka Ingestion Event ==
+
+Topic -> KML : poll() delivers message payload
+activate KML
+KML -> SC : consumeSignal(String message)
+activate SC
+
+SC -> OM : readValue(message, SignalEvent.class)
+activate OM
+OM --> SC : SignalEvent(symbol, action, qty, price, provider, strategy)
+deactivate OM
+
+alt Payload Incomplete / Invalid
+    note over SC
+        Validate:
+        1. symbol != null
+        2. action in {"BUY", "SELL"}
+        3. qty > 0
+        4. provider is present & non-blank
+    end note
+    SC -> SC : log.warn / log.error; return;
+else Payload Valid
+    SC -> SC : clientOrderId = UUID.randomUUID().toString()
+    SC -> RM : evaluateAndLock(clientOrderId, symbol, qty, price, action, provider)
+    activate RM
+    RM --> SC : RiskDecision
+    deactivate RM
+end
+
+deactivate SC
+deactivate KML
+
+@enduml
