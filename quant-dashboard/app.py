@@ -398,6 +398,7 @@ elif page == "Notification Center":
     tg_enabled = False
     tg_token = ""
     tg_chat_id = ""
+    tg_topic_id = ""
 
     ntfy_enabled = False
     ntfy_url = "https://ntfy.sh"
@@ -420,6 +421,7 @@ elif page == "Notification Center":
             tg_enabled = (r_client.get("notify:config:telegram:enabled") or "false").lower() in ("true", "1", "yes")
             tg_token = r_client.get("notify:config:telegram:token") or ""
             tg_chat_id = r_client.get("notify:config:telegram:chat_id") or ""
+            tg_topic_id = r_client.get("notify:config:telegram:topic_id") or ""
 
             ntfy_enabled = (r_client.get("notify:config:ntfy:enabled") or "false").lower() in ("true", "1", "yes")
             ntfy_url = r_client.get("notify:config:ntfy:url") or "https://ntfy.sh"
@@ -445,7 +447,8 @@ elif page == "Notification Center":
         st.write("#### 📢 Telegram Bot")
         if tg_enabled:
             st.success("🟢 ENABLED")
-            st.caption(f"**Chat ID:** {tg_chat_id or 'Not set'}\n\n**Token:** {'Configured' if tg_token else 'Missing'}")
+            topic_str = f"\n\n**Topic ID:** {tg_topic_id}" if tg_topic_id else ""
+            st.caption(f"**Chat ID:** {tg_chat_id or 'Not set'}{topic_str}\n\n**Token:** {'Configured' if tg_token else 'Missing'}")
         else:
             st.warning("⚪ DISABLED")
             st.caption("Telegram bot messages paused.")
@@ -514,6 +517,7 @@ elif page == "Notification Center":
             new_tg_token = st.text_input("Telegram Bot Token", value=tg_token, type="password", placeholder="123456:ABC-DEF...", help="Bot token obtained from @BotFather.")
         with t_col2:
             new_tg_chat_id = st.text_input("Telegram Chat / Channel ID", value=tg_chat_id, placeholder="e.g. -1001234567890 or @mychannel", help="Numeric Chat ID or channel username.")
+            new_tg_topic_id = st.text_input("Telegram Topic ID / Thread ID (Optional)", value=tg_topic_id, placeholder="e.g. 1234", help="Forum topic/thread ID if posting to a specific topic in a supergroup.")
 
         st.divider()
 
@@ -550,6 +554,7 @@ elif page == "Notification Center":
                 if new_tg_token:
                     r_client.set("notify:config:telegram:token", new_tg_token.strip())
                 r_client.set("notify:config:telegram:chat_id", new_tg_chat_id.strip())
+                r_client.set("notify:config:telegram:topic_id", new_tg_topic_id.strip())
 
                 # Save ntfy
                 r_client.set("notify:config:ntfy:enabled", "true" if new_ntfy_enabled else "false")
@@ -586,7 +591,8 @@ elif page == "Notification Center":
                 "qty": 100,
                 "price": 260.00,
                 "gate": "PRICE_COLLAR",
-                "reason": "PRICE_COLLAR_VIOLATION (13.04% > 2.0%)"
+                "reason": "PRICE_COLLAR_VIOLATION (13.04% > 2.0%)",
+                "telegram_topic_id": tg_topic_id
             }
             try:
                 req_data = json.dumps(test_payload).encode("utf-8")

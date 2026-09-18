@@ -48,7 +48,7 @@ public class OrderExecutionClient {
             return stub.placeOrder(request);
         } catch (StatusRuntimeException e) {
             log.error("gRPC PlaceOrder failed for provider '{}' at endpoint '{}': {}", provider, endpoint, e.getStatus());
-            if (riskManager != null) {
+            if (riskManager != null && e.getStatus().getCode() == io.grpc.Status.Code.UNAVAILABLE) {
                 riskManager.markProviderInactive(provider);
             }
             throw e;

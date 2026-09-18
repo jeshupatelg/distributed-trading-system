@@ -65,3 +65,39 @@
   - Verified `quant-dashboard` status: Up and Healthy on port 8501 (`/dashboard/`).
   - Verified `order-processing-service` actively publishes `OrderRejectEvent` to `order-reject-events`.
   - Verified live dispatch and response from `/api/v1/notify/test`.
+
+## Deployment Action 4: Telegram Topic ID (`message_thread_id`) Integration
+- **Objective**: Add first-class support for Telegram forum topics (`message_thread_id`) across Notification Service and Quant Dashboard.
+- **Root Cause / Requirement**: When operating Telegram alerts within supergroups with forum topics enabled, notifications without a `message_thread_id` are delivered to the root or "General" topic. Operators require routing notifications directly to dedicated topic threads (e.g. Alerts, Fills, Rejections).
+- **Key Modules Modified**:
+  1. **Telegram Channel (`notification-service/channels/telegram.py`)**:
+     - Updated `send_telegram()` to accept optional `message_thread_id: int | str | None = None`.
+     - Validated and injected `"message_thread_id": int(...)` into the Telegram Bot API payload when present.
+  2. **Notification Configuration (`notification-service/config.py`)**:
+     - Added `TELEGRAM_TOPIC_ID` from environment variable.
+     - Merged dynamic Redis override `notify:config:telegram:topic_id` in `get_active_config()`.
+  3. **Event Consumer (`notification-service/consumer.py`)**:
+     - Forwarded `cfg.get("telegram_topic_id")` to `send_telegram()` for risk rejections, order placements, and completions.
+  4. **FastAPI Endpoints (`notification-service/main.py`)**:
+     - Exposed `topic_id` in `/api/v1/notify/status`.
+     - Added `telegram_topic_id` field to `TestNotificationRequest` and passed it to `send_telegram()` in `/api/v1/notify/test`.
+  5. **Docker Compose (`docker-compose.yml`)**:
+     - Added `TELEGRAM_TOPIC_ID=${TELEGRAM_TOPIC_ID:-}` to `notification-service` environment.
+  6. **Quant Dashboard (`quant-dashboard/app.py`)**:
+     - Added `Telegram Topic ID / Thread ID (Optional)` input field under Telegram settings card.
+     - Persisted value to Redis key `notify:config:telegram:topic_id`.
+     - Displayed configured Topic ID in Top Status Card.
+     - Included `telegram_topic_id` in Live Channel Test dispatch.
+- **Deployment Strategy**:
+  - Inner-loop deployment via `sync_project_files` and `deploy_compose_stack` (no git commits per user instruction).
+
+## Deployment Action 5: Fix Over-Aggressive Provider Inactivation in OPS
+- **Objective**: Prevent order-level broker rejections (e.g. insufficient available shares) from falsely triggering provider-wide inactivation.
+- **Root Cause**: `OrderExecutionClient.placeOrder()` caught all `StatusRuntimeException` exceptions indiscriminately and called `riskManager.markProviderInactive(provider)`. When Alpaca rejected an order with `code: 40310000` (`insufficient qty available for order`), the gateway wrapped the exception as `StatusRuntimeException: INTERNAL`, causing OPS to mark `alpaca` as `INACTIVE` in-memory and in Redis. This halted all subsequent trading across all symbols.
+- **Key Modules Modified**:
+  1. **`OrderExecutionClient.java`**:
+     - Constrained `riskManager.markProviderInactive(provider)` to only execute when the gRPC status code is `UNAVAILABLE` (genuine gateway/network offline state).
+     - Order-level application and broker rejections continue to be handled properly by `SignalConsumer` (reverting the margin reservation and publishing `OrderRejectEvent` to Kafka).
+- **Verification**:
+  - Verified `order-processing-service` rebuild and startup.
+  - Confirmed `alpaca` connection manager probed as `HEALTHY` and account cache verified as `ACTIVE`.

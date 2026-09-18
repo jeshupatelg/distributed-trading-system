@@ -89,7 +89,12 @@ class NotificationConsumer:
             wa_text = formatter.format_reject_whatsapp(payload)
 
             if cfg.get("telegram_enabled") and cfg.get("telegram_token") and cfg.get("telegram_chat_id"):
-                tasks.append(send_telegram(cfg["telegram_token"], cfg["telegram_chat_id"], tg_text))
+                tasks.append(send_telegram(
+                    cfg["telegram_token"],
+                    cfg["telegram_chat_id"],
+                    tg_text,
+                    message_thread_id=cfg.get("telegram_topic_id")
+                ))
 
             if cfg.get("ntfy_enabled") and cfg.get("ntfy_url") and cfg.get("ntfy_topic"):
                 tasks.append(send_ntfy(cfg["ntfy_url"], cfg["ntfy_topic"], ntfy_title, ntfy_body, priority="urgent", tags=["warning", "rotating_light"], token=cfg.get("ntfy_token")))
@@ -108,7 +113,12 @@ class NotificationConsumer:
             wa_text = formatter.format_create_whatsapp(payload)
 
             if cfg.get("telegram_enabled") and cfg.get("telegram_token") and cfg.get("telegram_chat_id"):
-                tasks.append(send_telegram(cfg["telegram_token"], cfg["telegram_chat_id"], tg_text))
+                tasks.append(send_telegram(
+                    cfg["telegram_token"],
+                    cfg["telegram_chat_id"],
+                    tg_text,
+                    message_thread_id=cfg.get("telegram_topic_id")
+                ))
 
             if cfg.get("ntfy_enabled") and cfg.get("ntfy_url") and cfg.get("ntfy_topic"):
                 tasks.append(send_ntfy(cfg["ntfy_url"], cfg["ntfy_topic"], ntfy_title, ntfy_body, priority="default", tags=["rocket"], token=cfg.get("ntfy_token")))
@@ -130,7 +140,12 @@ class NotificationConsumer:
             icon_tag = "white_check_mark" if status == "COMPLETED" else "warning"
 
             if cfg.get("telegram_enabled") and cfg.get("telegram_token") and cfg.get("telegram_chat_id"):
-                tasks.append(send_telegram(cfg["telegram_token"], cfg["telegram_chat_id"], tg_text))
+                tasks.append(send_telegram(
+                    cfg["telegram_token"],
+                    cfg["telegram_chat_id"],
+                    tg_text,
+                    message_thread_id=cfg.get("telegram_topic_id")
+                ))
 
             if cfg.get("ntfy_enabled") and cfg.get("ntfy_url") and cfg.get("ntfy_topic"):
                 tasks.append(send_ntfy(cfg["ntfy_url"], cfg["ntfy_topic"], ntfy_title, ntfy_body, priority="high", tags=[icon_tag], token=cfg.get("ntfy_token")))

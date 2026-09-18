@@ -263,6 +263,7 @@ services:
       - EVOLUTION_RECIPIENT=${EVOLUTION_RECIPIENT:-}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - TELEGRAM_TOPIC_ID=${TELEGRAM_TOPIC_ID:-}
       - NTFY_URL=${NTFY_URL:-https://ntfy.sh}
       - NTFY_TOPIC=${NTFY_TOPIC:-trading-system-alerts}
     networks:

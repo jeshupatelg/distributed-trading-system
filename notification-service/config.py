@@ -16,9 +16,9 @@ REDIS_HOST = os.getenv("REDIS_HOST", "host.docker.internal")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
 
-# Channel Defaults from Env
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+TELEGRAM_TOPIC_ID = os.getenv("TELEGRAM_TOPIC_ID", "")
 TELEGRAM_ENABLED = os.getenv("TELEGRAM_ENABLED", "false").lower() in ("true", "1", "yes")
 
 NTFY_URL = os.getenv("NTFY_URL", "https://ntfy.sh").rstrip("/")
@@ -66,6 +66,7 @@ def get_active_config(r=None):
         # Telegram
         "telegram_token": TELEGRAM_BOT_TOKEN,
         "telegram_chat_id": TELEGRAM_CHAT_ID,
+        "telegram_topic_id": TELEGRAM_TOPIC_ID,
         "telegram_enabled": TELEGRAM_ENABLED,
         # ntfy
         "ntfy_url": NTFY_URL,
@@ -94,6 +95,9 @@ def get_active_config(r=None):
             if r.exists("notify:config:telegram:chat_id"):
                 val = r.get("notify:config:telegram:chat_id")
                 if val: cfg["telegram_chat_id"] = val
+            if r.exists("notify:config:telegram:topic_id"):
+                val = r.get("notify:config:telegram:topic_id")
+                cfg["telegram_topic_id"] = val if val else ""
             if r.exists("notify:config:telegram:enabled"):
                 val = r.get("notify:config:telegram:enabled")
                 cfg["telegram_enabled"] = val.lower() in ("true", "1", "yes")

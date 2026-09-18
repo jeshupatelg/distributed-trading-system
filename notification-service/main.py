@@ -70,6 +70,7 @@ def get_status():
             "telegram": {
                 "enabled": cfg["telegram_enabled"],
                 "chat_id": cfg["telegram_chat_id"],
+                "topic_id": cfg.get("telegram_topic_id", ""),
                 "token_configured": bool(cfg["telegram_token"]),
                 "token_preview": _mask(cfg["telegram_token"])
             },
@@ -104,6 +105,7 @@ class TestNotificationRequest(BaseModel):
     price: Optional[float] = 260.00
     gate: Optional[str] = "PRICE_COLLAR"
     reason: Optional[str] = "PRICE_COLLAR_VIOLATION (13.04% > 2.0%)"
+    telegram_topic_id: Optional[str] = None
 
 
 @app.post("/api/v1/notify/test")
@@ -138,7 +140,8 @@ async def send_test_notification(req: TestNotificationRequest):
             text = (formatter.format_reject_telegram(mock_data) 
                     if req.event_type == "reject" 
                     else formatter.format_complete_telegram(mock_data))
-            success = await send_telegram(cfg["telegram_token"], cfg["telegram_chat_id"], text)
+            topic_id = req.telegram_topic_id if req.telegram_topic_id is not None else cfg.get("telegram_topic_id")
+            success = await send_telegram(cfg["telegram_token"], cfg["telegram_chat_id"], text, message_thread_id=topic_id)
             results["telegram"] = {"success": success}
 
     # 2. ntfy
