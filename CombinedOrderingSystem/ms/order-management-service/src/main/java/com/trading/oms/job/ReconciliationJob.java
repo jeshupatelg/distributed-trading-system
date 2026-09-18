@@ -62,7 +62,7 @@ public class ReconciliationJob {
                     resolutionService.resolveOrder(orderId, "COMPLETED", filledQty, filledAvgPrice);
                 } else if ("canceled".equals(brokerStatus) || "rejected".equals(brokerStatus) || "expired".equals(brokerStatus)) {
                     resolutionService.resolveOrder(orderId, "FAILED", filledQty, filledAvgPrice);
-                } else {
+                } else {//TODO: dd timeout logic for stale stop-loss orders
                     log.info("Order {} is still active on broker (broker_status='{}'). No action taken.", orderId, brokerStatus);
                 }
 
