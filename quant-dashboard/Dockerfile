@@ -36,7 +36,7 @@ EXPOSE 8501
 
 # Declare health check utilizing native python urllib to check Streamlit health endpoint
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')" || exit 1
+    CMD python -c "import urllib.request, os; p = os.environ.get('STREAMLIT_SERVER_BASE_URL_PATH', '').strip('/'); url = f'http://localhost:8501/{p}/_stcore/health' if p else 'http://localhost:8501/_stcore/health'; urllib.request.urlopen(url)" || exit 1
 
 # Define running user as non-root for container hardening
 RUN useradd -u 8888 appuser && chown -R appuser:appuser /app
