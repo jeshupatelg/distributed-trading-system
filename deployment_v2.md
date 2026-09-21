@@ -137,4 +137,8 @@
   - **`order-processing-service`**: Started in 21.6 seconds. `TradingRedisFacade` instantiated. `RedisDefaultsInitializer` non-destructively seeded 13 defaults to `system:defaults:*`. Kafka consumer group `ops-group` listening on `trading-signals`.
   - **`order-management-service`**: Started in 24.1 seconds. `TradingRedisFacade` instantiated. Probed gRPC `connection-manager-alpaca:50051` and verified `alpaca` as `HEALTHY`, setting `provider:status:alpaca` to `ACTIVE`. Scheduled reconciliation completed cleanly.
   - **`quant-dashboard`**: Container state `running` and `healthy`. Streamlit dashboard serving on port `8501/dashboard`.
+  - **Live Redis Telemetry**:
+    - Confirmed non-destructive seeding of 13 keys in `system:defaults:*`: `positions`, `orders:pending`, `provider:status`, `system:kill_switch`, `system:kill_switch:provider`, `risk:velocity_sec`, `risk:velocity_min`, `risk:velocity_per_sec`, `risk:velocity_per_min`, `risk:max_order_qty`, `risk:price_collar_pct`, `risk:stop_loss_pct`, `risk:max_concentration_pct`.
+    - Live canonical keys confirmed active: `balance:cash:alpaca`, `balance:blocked:alpaca`, `balance:starting_equity:alpaca`, `balance:last_reset_date:alpaca`, `provider:status:alpaca`, `positions:alpaca:AAPL`, `positions:alpaca:MSFT`.
+    - Unnamespaced legacy keys confirmed isolated for Phase 5 eviction: `balance:cash`, `balance:blocked`, `risk:config:max_daily_loss`, `risk:config:max_order_val`, `positions:AAPL`, `positions:MSFT`.
   - **Container Fleet**: All 20/20 whitelisted containers confirmed `running` and healthy on remote Docker daemon.
