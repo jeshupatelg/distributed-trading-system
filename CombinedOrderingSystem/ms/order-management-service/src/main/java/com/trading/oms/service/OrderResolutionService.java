@@ -1,14 +1,16 @@
 package com.trading.oms.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.trading.shared.config.ProviderConfig;
 import com.trading.oms.dto.OrderCompleteEvent;
 import com.trading.oms.model.TrackedOrder;
 import com.trading.oms.repository.TrackedOrderRepository;
+import com.trading.shared.config.ProviderConfig;
+import com.trading.shared.redis.RedisKeyBuilder;
+import com.trading.shared.redis.RedisKeyDef;
+import com.trading.shared.redis.TradingRedisFacade;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,13 +21,8 @@ import java.util.List;
 public class OrderResolutionService {
     private static final Logger log = LoggerFactory.getLogger(OrderResolutionService.class);
 
-    private static final String CASH_KEY = "balance:cash";
-    private static final String BLOCKED_KEY = "balance:blocked";
-    private static final String PENDING_ORDERS_KEY = "orders:pending";
-    private static final String POSITION_KEY_PREFIX = "positions:";
-
     private final TrackedOrderRepository orderRepository;
-    private final StringRedisTemplate redisTemplate;
+    private final TradingRedisFacade redisFacade;
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper objectMapper;
     private final List<ProviderConfig> providerBeans;
@@ -34,12 +31,12 @@ public class OrderResolutionService {
     private String orderCompleteTopic;
 
     public OrderResolutionService(TrackedOrderRepository orderRepository, 
-                                  StringRedisTemplate redisTemplate,
+                                  TradingRedisFacade redisFacade,
                                   KafkaTemplate<String, String> kafkaTemplate, 
                                   ObjectMapper objectMapper,
                                   List<ProviderConfig> providerBeans) {
         this.orderRepository = orderRepository;
-        this.redisTemplate = redisTemplate;
+        this.redisFacade = redisFacade;
         this.kafkaTemplate = kafkaTemplate;
         this.objectMapper = objectMapper;
         this.providerBeans = providerBeans;
@@ -101,17 +98,14 @@ public class OrderResolutionService {
         }
         String provider = order.getProvider().toLowerCase().trim();
 
-        String blockedKey = BLOCKED_KEY + ":" + provider;
-        String cashKey = CASH_KEY + ":" + provider;
-        String pendingOrdersKey = PENDING_ORDERS_KEY + ":" + provider;
+        String blockedKey = RedisKeyBuilder.key(RedisKeyDef.BALANCE_BLOCKED, provider);
+        String cashKey = RedisKeyBuilder.key(RedisKeyDef.BALANCE_CASH, provider);
 
         // Clear blocked margin for provider
-        redisTemplate.opsForValue().increment(blockedKey, -estimatedBlockedMargin);
-        // redisTemplate.opsForValue().increment(BLOCKED_KEY, -estimatedBlockedMargin); // Obsolete legacy fallback - RiskManager only locks balance:blocked:{provider}
+        redisFacade.increment(blockedKey, -estimatedBlockedMargin);
 
         // SREM orderId from pending set
-        redisTemplate.opsForSet().remove(pendingOrdersKey, order.getOrderId());
-        // redisTemplate.opsForSet().remove(PENDING_ORDERS_KEY, order.getOrderId()); // Obsolete legacy fallback - RiskManager only adds to orders:pending:{provider}
+        redisFacade.removeFromSet(RedisKeyDef.ORDERS_PENDING, provider, order.getOrderId());
 
         if ("COMPLETED".equals(status) && filledQty > 0) {
             double executionCost = filledAvgPrice * filledQty;
@@ -119,21 +113,16 @@ public class OrderResolutionService {
 
             // Settle cash per provider
             if ("BUY".equals(side)) {
-                redisTemplate.opsForValue().increment(cashKey, -executionCost);
-                // redisTemplate.opsForValue().increment(CASH_KEY, -executionCost); // Obsolete legacy fallback - balance:cash:{provider} is canonical
+                redisFacade.increment(cashKey, -executionCost);
             } else if ("SELL".equals(side)) {
-                redisTemplate.opsForValue().increment(cashKey, executionCost);
-                // redisTemplate.opsForValue().increment(CASH_KEY, executionCost); // Obsolete legacy fallback - balance:cash:{provider} is canonical
+                redisFacade.increment(cashKey, executionCost);
             }
 
-            // Settle positions per provider
-            String posKeyNamespaced = POSITION_KEY_PREFIX + provider + ":" + order.getSymbol().toUpperCase();
-
-            String currentPosStr = redisTemplate.opsForValue().get(posKeyNamespaced);
-            int currentPos = currentPosStr == null ? 0 : Integer.parseInt(currentPosStr);
+            // Settle positions per provider (defaults to 0 if sparse key absent)
+            int currentPos = redisFacade.getInteger(RedisKeyDef.POSITIONS, provider, order.getSymbol());
             int newPos = "BUY".equals(side) ? currentPos + filledQty : currentPos - filledQty;
 
-            redisTemplate.opsForValue().set(posKeyNamespaced, String.valueOf(newPos));
+            redisFacade.setInteger(RedisKeyDef.POSITIONS, provider, order.getSymbol(), newPos);
 
             log.info("Settled Redis cache for order {} (provider {}). Mutated cash by ${}, set position for {} to {}", 
                 order.getOrderId(), provider, ("BUY".equals(side) ? "-" : "+") + executionCost, order.getSymbol(), newPos);
@@ -143,11 +132,10 @@ public class OrderResolutionService {
     }
 
     private void settleCacheOnly(String orderId, String status, int filledQty, double filledAvgPrice) {
-        // redisTemplate.opsForSet().remove(PENDING_ORDERS_KEY, orderId); // Obsolete legacy fallback
         if (providerBeans != null) {
             for (ProviderConfig p : providerBeans) {
                 if (p.getName() != null && !p.getName().isBlank()) {
-                    redisTemplate.opsForSet().remove(PENDING_ORDERS_KEY + ":" + p.getName(), orderId);
+                    redisFacade.removeFromSet(RedisKeyDef.ORDERS_PENDING, p.getName().toLowerCase().trim(), orderId);
                 }
             }
         }

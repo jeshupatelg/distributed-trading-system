@@ -101,3 +101,26 @@
 - **Verification**:
   - Verified `order-processing-service` rebuild and startup.
   - Confirmed `alpaca` connection manager probed as `HEALTHY` and account cache verified as `ACTIVE`.
+
+## Deployment Action 6: Redis Keyspace Centralization & Service Migration (Phase 4)
+- **Objective**: Centralize the Redis keyspace across Order Processing Service (OPS), Order Management Service (OMS), and Quant Dashboard in accordance with ADR-005. Eliminate decentralized string keys, remove dangerous in-code fallbacks and arbitrary `$100.0` price defaults, enforce fail-fast validation for uninitialized margin/loss keys, and prevent cross-provider positions leakage.
+- **Root Cause / Problem Statement**:
+  1. Multiple microservices accessed Redis using raw string concatenations and unnamespaced legacy keys (`balance:cash`, `balance:blocked`, `risk:config:max_daily_loss`).
+  2. `quant-dashboard` performed dual-writes on form submission to both namespaced and unnamespaced keys (`risk:config:<param>` and `risk:config:<param>:<provider>`).
+  3. `RiskManager` fell back to a default price of `$100.00` if market price was missing, creating fictitious margin allocations.
+  4. `RiskManager` scanned `positions:*` across all providers if provider keys were absent, leaking cross-broker position sizes into drawdown calculations.
+- **Key Modules Modified**:
+  1. **OPS (`order-processing-service`)**:
+     - `OrderProcessingApplication.java`: Imported `SharedRedisConfiguration.class`.
+     - `RiskManager.java`: Replaced raw string constants with `RedisKeyDef` / `RedisKeyBuilder` / `TradingRedisFacade`. Implemented fail-fast checks on `BALANCE_CASH`, `BALANCE_BLOCKED`, `BALANCE_STARTING_EQUITY`, `RISK_CONFIG_MAX_DAILY_LOSS`, and `RISK_CONFIG_MAX_ORDER_VAL`. Replaced `$100.0` price fallback with ADR-005 compliant `getMarketPrice(provider, symbol)`. Fixed velocity minute window expiration timer bug (`minKey`).
+  2. **OMS (`order-management-service`)**:
+     - `OrderManagementApplication.java`: Imported `SharedRedisConfiguration.class`.
+     - `OrderResolutionService.java`: Replaced raw template calls with `TradingRedisFacade` for margin release, cash adjustments, and position settlement. Cleaned legacy comments.
+     - `EquityReconciliationService.java`: Replaced raw keys and template calls with `TradingRedisFacade` and ADR market price resolution.
+     - `DailyEquityRefreshJob.java`: Replaced template calls with `TradingRedisFacade` for `BALANCE_LAST_RESET_DATE`.
+     - `ProviderHealthCheckJob.java`: Replaced raw keys with `TradingRedisFacade` for `PROVIDER_STATUS`.
+  3. **Quant Dashboard (`quant-dashboard`)**:
+     - `app.py`: Eliminated dual-write loop on form submission (`risk:config`). Removed unnamespaced fallbacks (`balance:cash`, `balance:starting_equity`, `balance:blocked`). Scoped open positions strictly to `positions:{prov_key}:*`. Updated Portfolio & Assets page to support provider context switching and live Redis market price resolution.
+- **Deployment Strategy**:
+  - Outer-loop `git_sync_and_deploy` to synchronize Git repository on remote Docker host and reconcile compose stacks.
+  - Follow with inner-loop double-loop deployment testing and log diagnostics.

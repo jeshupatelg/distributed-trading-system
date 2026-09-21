@@ -2,9 +2,10 @@ package com.trading.oms.job;
 
 import com.trading.oms.service.ReconciliationClient;
 import com.trading.shared.config.ProviderConfig;
+import com.trading.shared.redis.RedisKeyDef;
+import com.trading.shared.redis.TradingRedisFacade;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -14,18 +15,16 @@ import java.util.List;
 public class ProviderHealthCheckJob {
     private static final Logger log = LoggerFactory.getLogger(ProviderHealthCheckJob.class);
 
-    private static final String PROVIDER_STATUS_KEY_PREFIX = "provider:status:";
-
     private final List<ProviderConfig> providerBeans;
     private final ReconciliationClient reconciliationClient;
-    private final StringRedisTemplate redisTemplate;
+    private final TradingRedisFacade redisFacade;
 
     public ProviderHealthCheckJob(List<ProviderConfig> providerBeans,
-                                 ReconciliationClient reconciliationClient,
-                                 StringRedisTemplate redisTemplate) {
+                                  ReconciliationClient reconciliationClient,
+                                  TradingRedisFacade redisFacade) {
         this.providerBeans = providerBeans;
         this.reconciliationClient = reconciliationClient;
-        this.redisTemplate = redisTemplate;
+        this.redisFacade = redisFacade;
     }
 
     /**
@@ -50,11 +49,11 @@ public class ProviderHealthCheckJob {
                 log.warn("Provider '{}' configuration is INCOMPLETE (endpoint='{}', timezone='{}', exchange='{}'). Skipping reconnection retry.",
                     prov, p.getEndpoint(), p.getTimezone(), p.getExchange());
                 p.setActive(false);
-                redisTemplate.opsForValue().set(PROVIDER_STATUS_KEY_PREFIX + prov, "INACTIVE");
+                redisFacade.setString(RedisKeyDef.PROVIDER_STATUS, prov, "INACTIVE");
                 continue;
             }
 
-            String currentStatus = redisTemplate.opsForValue().get(PROVIDER_STATUS_KEY_PREFIX + prov);
+            String currentStatus = redisFacade.getString(RedisKeyDef.PROVIDER_STATUS, prov);
             boolean isInactive = "INACTIVE".equalsIgnoreCase(currentStatus) || !p.isActive();
 
             if (isInactive) {
@@ -62,7 +61,7 @@ public class ProviderHealthCheckJob {
                 boolean healthy = reconciliationClient.checkHealth(prov);
                 if (healthy) {
                     p.setActive(true);
-                    redisTemplate.opsForValue().set(PROVIDER_STATUS_KEY_PREFIX + prov, "ACTIVE");
+                    redisFacade.setString(RedisKeyDef.PROVIDER_STATUS, prov, "ACTIVE");
                     log.info("HEALTH RECOVERY: Provider '{}' connection manager is HEALTHY again! Restored status to ACTIVE in Redis.", prov);
                 } else {
                     log.debug("Provider '{}' connection manager remains UNHEALTHY. Retrying next cycle.", prov);

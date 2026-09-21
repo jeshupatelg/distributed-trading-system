@@ -165,11 +165,11 @@ if page == "System Control Center":
     with r_col1:
         st.metric("Global Kill Switch", "ARMED / ACTIVE" if kill_switch_active else "NORMAL OPERATION")
     with r_col2:
-        daily_loss_cfg = float(r_client.get("risk:config:max_daily_loss") or 2000.0) if redis_connected else 2000.0
-        st.metric("Max Daily Loss Limit", f"{curr_sym}{daily_loss_cfg:,.2f}")
+        daily_loss_cfg = float(r_client.get("risk:config:max_daily_loss:alpaca") or 2000.0) if redis_connected else 2000.0
+        st.metric("Max Daily Loss Limit (Alpaca)", f"{curr_sym}{daily_loss_cfg:,.2f}")
     with r_col3:
-        collar_cfg = float(r_client.get("risk:config:price_collar_pct") or 1.5) if redis_connected else 1.5
-        st.metric("Price Collar Band", f"±{collar_cfg}%")
+        collar_cfg = float(r_client.get("risk:config:price_collar_pct:alpaca") or 1.5) if redis_connected else 1.5
+        st.metric("Price Collar Band (Alpaca)", f"±{collar_cfg}%")
 
 
 # =====================================================================
@@ -221,21 +221,27 @@ elif page == "Risk Engine & Controls":
     sel_prov = st.selectbox("Select Provider Context for Risk Firewall", ["alpaca", "megabull"], index=0, key="risk_prov_sel")
     prov_key = sel_prov.lower()
 
-    # Read live balances & drawdown per provider
-    cash = float(r_client.get(f"balance:cash:{prov_key}") or r_client.get("balance:cash") or 100000.0) if redis_connected else 100000.0
-    start_equity = float(r_client.get(f"balance:starting_equity:{prov_key}") or r_client.get("balance:starting_equity") or 100000.0) if redis_connected else 100000.0
-    blocked_margin = float(r_client.get(f"balance:blocked:{prov_key}") or r_client.get("balance:blocked") or 0.0) if redis_connected else 0.0
-    max_daily_loss = float(r_client.get(f"risk:config:max_daily_loss:{prov_key}") or r_client.get("risk:config:max_daily_loss") or 2000.0) if redis_connected else 2000.0
+    # Read live balances & drawdown per provider (strictly namespaced, no unnamespaced fallback)
+    cash_val = r_client.get(f"balance:cash:{prov_key}") if redis_connected else None
+    cash = float(cash_val) if cash_val is not None else 0.0
+
+    start_equity_val = r_client.get(f"balance:starting_equity:{prov_key}") if redis_connected else None
+    start_equity = float(start_equity_val) if start_equity_val is not None else 0.0
+
+    blocked_margin_val = r_client.get(f"balance:blocked:{prov_key}") if redis_connected else None
+    blocked_margin = float(blocked_margin_val) if blocked_margin_val is not None else 0.0
+
+    max_daily_loss_val = r_client.get(f"risk:config:max_daily_loss:{prov_key}") if redis_connected else None
+    max_daily_loss = float(max_daily_loss_val) if max_daily_loss_val is not None else 2000.0
     
-    # Open positions per provider
+    # Open positions per provider (strictly namespaced, no cross-provider leak)
     pos_keys = r_client.keys(f"positions:{prov_key}:*") if redis_connected else []
-    if not pos_keys and redis_connected:
-        pos_keys = r_client.keys("positions:*")
     positions_val = 0.0
     for pk in pos_keys:
         sym = pk.split(":")[-1]
         qty = float(r_client.get(pk) or 0.0)
-        last_px = float(r_client.get(f"market:last_price:{prov_key}:{sym}") or r_client.get(f"market:last_price:{sym}") or 100.0)
+        price_val = r_client.get(f"market:last_price:{prov_key}:{sym}") or r_client.get(f"market:last_price:{sym}")
+        last_px = float(price_val) if price_val is not None else 0.0
         positions_val += (qty * last_px)
         
     total_equity = cash + positions_val
@@ -259,15 +265,15 @@ elif page == "Risk Engine & Controls":
     st.subheader(f"⚙️ Modifiable Pre-Trade Risk Limits for {sel_prov.upper()} (Persisted to Redis)")
     st.markdown("Adjust limits dynamically. Modifications take effect **immediately** across all worker threads without service restarts.")
 
-    # Load current configs from Redis or defaults per provider
-    curr_daily_loss = float(r_client.get(f"risk:config:max_daily_loss:{prov_key}") or r_client.get("risk:config:max_daily_loss") or 2000.0) if redis_connected else 2000.0
-    curr_collar_pct = float(r_client.get(f"risk:config:price_collar_pct:{prov_key}") or r_client.get("risk:config:price_collar_pct") or 1.5) if redis_connected else 1.5
-    curr_vel_sec = int(r_client.get(f"risk:config:velocity_per_sec:{prov_key}") or r_client.get("risk:config:velocity_per_sec") or 5) if redis_connected else 5
-    curr_vel_min = int(r_client.get(f"risk:config:velocity_per_min:{prov_key}") or r_client.get("risk:config:velocity_per_min") or 30) if redis_connected else 30
-    curr_max_qty = int(r_client.get(f"risk:config:max_order_qty:{prov_key}") or r_client.get("risk:config:max_order_qty") or 500) if redis_connected else 500
-    curr_max_val = float(r_client.get(f"risk:config:max_order_val:{prov_key}") or r_client.get("risk:config:max_order_val") or 25000.0) if redis_connected else 25000.0
-    curr_max_conc = float(r_client.get(f"risk:config:max_concentration_pct:{prov_key}") or r_client.get("risk:config:max_concentration_pct") or 20.0) if redis_connected else 20.0
-    curr_stop_loss = float(r_client.get(f"risk:config:stop_loss_pct:{prov_key}") or r_client.get("risk:config:stop_loss_pct") or 2.0) if redis_connected else 2.0
+    # Load current configs from Redis or defaults per provider (strictly namespaced)
+    curr_daily_loss = float(r_client.get(f"risk:config:max_daily_loss:{prov_key}") or 2000.0) if redis_connected else 2000.0
+    curr_collar_pct = float(r_client.get(f"risk:config:price_collar_pct:{prov_key}") or 1.5) if redis_connected else 1.5
+    curr_vel_sec = int(r_client.get(f"risk:config:velocity_per_sec:{prov_key}") or 5) if redis_connected else 5
+    curr_vel_min = int(r_client.get(f"risk:config:velocity_per_min:{prov_key}") or 30) if redis_connected else 30
+    curr_max_qty = int(r_client.get(f"risk:config:max_order_qty:{prov_key}") or 500) if redis_connected else 500
+    curr_max_val = float(r_client.get(f"risk:config:max_order_val:{prov_key}") or 25000.0) if redis_connected else 25000.0
+    curr_max_conc = float(r_client.get(f"risk:config:max_concentration_pct:{prov_key}") or 20.0) if redis_connected else 20.0
+    curr_stop_loss = float(r_client.get(f"risk:config:stop_loss_pct:{prov_key}") or 2.0) if redis_connected else 2.0
 
     with st.form("risk_config_form"):
         col_a, col_b = st.columns(2)
@@ -358,17 +364,15 @@ elif page == "Risk Engine & Controls":
         submitted = st.form_submit_button("💾 Save Risk Parameters to Redis", type="primary", use_container_width=True)
         if submitted:
             if redis_connected:
-                # Save to provider-namespaced key as well as legacy global key
-                for p_k in [prov_key, ""]:
-                    suffix = f":{p_k}" if p_k else ""
-                    r_client.set(f"risk:config:max_daily_loss{suffix}", str(new_daily_loss))
-                    r_client.set(f"risk:config:price_collar_pct{suffix}", str(new_collar_pct))
-                    r_client.set(f"risk:config:velocity_per_sec{suffix}", str(new_vel_sec))
-                    r_client.set(f"risk:config:velocity_per_min{suffix}", str(new_vel_min))
-                    r_client.set(f"risk:config:max_order_qty{suffix}", str(new_max_qty))
-                    r_client.set(f"risk:config:max_order_val{suffix}", str(new_max_val))
-                    r_client.set(f"risk:config:max_concentration_pct{suffix}", str(new_max_conc))
-                    r_client.set(f"risk:config:stop_loss_pct{suffix}", str(new_stop_loss))
+                # Save strictly to provider-namespaced key (no dual-write to unnamespaced legacy key)
+                r_client.set(f"risk:config:max_daily_loss:{prov_key}", str(new_daily_loss))
+                r_client.set(f"risk:config:price_collar_pct:{prov_key}", str(new_collar_pct))
+                r_client.set(f"risk:config:velocity_per_sec:{prov_key}", str(new_vel_sec))
+                r_client.set(f"risk:config:velocity_per_min:{prov_key}", str(new_vel_min))
+                r_client.set(f"risk:config:max_order_qty:{prov_key}", str(new_max_qty))
+                r_client.set(f"risk:config:max_order_val:{prov_key}", str(new_max_val))
+                r_client.set(f"risk:config:max_concentration_pct:{prov_key}", str(new_max_conc))
+                r_client.set(f"risk:config:stop_loss_pct:{prov_key}", str(new_stop_loss))
                 st.success(f"✅ Risk parameters for {sel_prov.upper()} updated successfully in Redis! Pre-trade risk engine updated in real-time.")
                 time.sleep(1)
                 st.rerun()
@@ -619,15 +623,24 @@ elif page == "Portfolio & Assets":
     st.title("💼 Portfolio & Asset Allocation")
     st.markdown("Real-time equity, margins, and position distributions pulled from Redis cache.")
     
+    sel_prov = st.selectbox("Select Provider Context for Portfolio", ["alpaca", "megabull"], index=0, key="portfolio_prov_sel")
+    prov_key = sel_prov.lower()
+
+    balance = 0.0
+    blocked_margin = 0.0
+    positions = {}
+
     if redis_connected:
         try:
-            balance = float(r_client.get("balance:cash") or 100000.0)
-            blocked_margin = float(r_client.get("balance:blocked") or 0.0)
+            bal_val = r_client.get(f"balance:cash:{prov_key}")
+            balance = float(bal_val) if bal_val is not None else 0.0
+            blk_val = r_client.get(f"balance:blocked:{prov_key}")
+            blocked_margin = float(blk_val) if blk_val is not None else 0.0
             
-            position_keys = r_client.keys("positions:*")
-            positions = {}
+            pos_prefix = f"positions:{prov_key}:"
+            position_keys = r_client.keys(f"{pos_prefix}*")
             for pk in position_keys:
-                ticker = pk.split(":")[-1]
+                ticker = pk.replace(pos_prefix, "")
                 qty = float(r_client.get(pk) or 0.0)
                 if qty > 0:
                     positions[ticker] = qty
@@ -642,7 +655,18 @@ elif page == "Portfolio & Assets":
 
     free_cash = balance - blocked_margin
     mock_prices = {"AAPL": 320.0, "MSFT": 515.0, "RELIANCE": 2980.0, "TCS": 4150.0, "INFY": 1820.0}
-    position_value = sum(qty * mock_prices.get(ticker, 100.0) for ticker, qty in positions.items())
+
+    def get_ticker_price(ticker_sym):
+        if redis_connected:
+            px = r_client.get(f"market:last_price:{prov_key}:{ticker_sym}") or r_client.get(f"market:last_price:{ticker_sym}")
+            if px is not None:
+                try:
+                    return float(px)
+                except ValueError:
+                    pass
+        return mock_prices.get(ticker_sym, 0.0)
+
+    position_value = sum(qty * get_ticker_price(ticker) for ticker, qty in positions.items())
     total_equity = free_cash + blocked_margin + position_value
 
     col1, col2, col3, col4 = st.columns(4)
@@ -659,7 +683,7 @@ elif page == "Portfolio & Assets":
         df_pie = pd.DataFrame([
             {"Asset": "Free Cash", "Value": max(0.0, free_cash)},
             {"Asset": "Blocked Margin", "Value": max(0.0, blocked_margin)},
-        ] + [{"Asset": f"Position: {t}", "Value": q * mock_prices.get(t, 100.0)} for t, q in positions.items()])
+        ] + [{"Asset": f"Position: {t}", "Value": q * get_ticker_price(t)} for t, q in positions.items()])
         
         fig_pie = px.pie(df_pie, values='Value', names='Asset', hole=0.4,
                          color_discrete_sequence=px.colors.sequential.RdBu)
@@ -669,7 +693,7 @@ elif page == "Portfolio & Assets":
         st.subheader("Current Open Positions")
         if positions:
             df_pos = pd.DataFrame([
-                {"Ticker": t, "Quantity": q, "Value": q * mock_prices.get(t, 100.0)} for t, q in positions.items()
+                {"Ticker": t, "Quantity": q, "Value": q * get_ticker_price(t)} for t, q in positions.items()
             ])
             fig_bar = px.bar(df_pos, x='Ticker', y='Value', text_auto='.2s', labels={'Value': f'Total Value ({curr_sym})'},
                              color='Ticker', color_discrete_sequence=px.colors.qualitative.Set2)
