@@ -124,3 +124,17 @@
 - **Deployment Strategy**:
   - Outer-loop `git_sync_and_deploy` to synchronize Git repository on remote Docker host and reconcile compose stacks.
   - Follow with inner-loop double-loop deployment testing and log diagnostics.
+- **Diagnostics, RCA & Fixes Applied During Double-Loop**:
+  1. **Spring Boot `TradingRedisFacade` Bean Missing Failure**:
+     - *Symptoms*: Both `order-processing-service` and `order-management-service` crashed on startup with `UnsatisfiedDependencyException: No qualifying bean of type 'com.trading.shared.redis.TradingRedisFacade' available`.
+     - *Root Cause Analysis (RCA)*: `SharedRedisConfiguration.java` was annotated with `@ConditionalOnBean(StringRedisTemplate.class)`. In Spring Boot, evaluating `@ConditionalOnBean` inside user-imported configuration classes runs before Spring's `RedisAutoConfiguration` has registered `StringRedisTemplate`. Consequently, the condition evaluated to `false` and skipped creating `TradingRedisFacade` and `RedisDefaultsInitializer`.
+     - *Fix*: Removed `@ConditionalOnBean(StringRedisTemplate.class)` from bean provider methods in `SharedRedisConfiguration.java`, allowing Spring to naturally resolve `StringRedisTemplate` during bean instantiation. Pushed commit `e0730e5` and synced via `sync_project_files`.
+  2. **Quant Dashboard Container Healthcheck Failure**:
+     - *Symptoms*: `quant-dashboard` container reported `unhealthy` with exit code 1 on healthcheck curl.
+     - *Root Cause Analysis (RCA)*: The Dockerfile healthcheck queried `http://localhost:8501/_stcore/health` without considering `STREAMLIT_SERVER_BASE_URL_PATH=dashboard`, producing HTTP 404.
+     - *Fix*: Updated `quant-dashboard/Dockerfile` to dynamically inspect `STREAMLIT_SERVER_BASE_URL_PATH` (querying `http://localhost:8501/${STREAMLIT_SERVER_BASE_URL_PATH}/_stcore/health`). Pushed commit `33de1c6`.
+- **Verification & Live Telemetry Evidence**:
+  - **`order-processing-service`**: Started in 21.6 seconds. `TradingRedisFacade` instantiated. `RedisDefaultsInitializer` non-destructively seeded 13 defaults to `system:defaults:*`. Kafka consumer group `ops-group` listening on `trading-signals`.
+  - **`order-management-service`**: Started in 24.1 seconds. `TradingRedisFacade` instantiated. Probed gRPC `connection-manager-alpaca:50051` and verified `alpaca` as `HEALTHY`, setting `provider:status:alpaca` to `ACTIVE`. Scheduled reconciliation completed cleanly.
+  - **`quant-dashboard`**: Container state `running` and `healthy`. Streamlit dashboard serving on port `8501/dashboard`.
+  - **Container Fleet**: All 20/20 whitelisted containers confirmed `running` and healthy on remote Docker daemon.
