@@ -142,3 +142,45 @@
     - Live canonical keys confirmed active: `balance:cash:alpaca`, `balance:blocked:alpaca`, `balance:starting_equity:alpaca`, `balance:last_reset_date:alpaca`, `provider:status:alpaca`, `positions:alpaca:AAPL`, `positions:alpaca:MSFT`.
     - Unnamespaced legacy keys confirmed isolated for Phase 5 eviction: `balance:cash`, `balance:blocked`, `risk:config:max_daily_loss`, `risk:config:max_order_val`, `positions:AAPL`, `positions:MSFT`.
   - **Container Fleet**: All 20/20 whitelisted containers confirmed `running` and healthy on remote Docker daemon.
+
+---
+
+### Deployment Action 7: ProviderStateManager Safety Gates, Non-Defaultable Keys Check & State Flapping Prevention (2026-09-23)
+- **Commit**: `cdb8c7c`
+- **Scope & Components Modified**:
+  1. **Shared Models (`libs/shared-models`)**:
+     - `ProviderStateManager.java`: Introduced centralized manager enforcing all 6 non-defaultable provider-scoped keys (`balance:cash:{p}`, `balance:blocked:{p}`, `balance:starting_equity:{p}`, `balance:last_reset_date:{p}`, `risk:config:max_daily_loss:{p}`, `risk:config:max_order_val:{p}`). Added stub hooks (`reconcileProviderState`, `onAccountInfoReceived`) for future direct broker query state reconciliation.
+     - `ProviderStateManagerTest.java`: Added 5 unit tests covering complete state validation, missing key detection, active/inactive mutations, and broker reconciliation stubs.
+     - `TradingRedisFacade.java`: Modernized to Java 21 `record TradingRedisFacade(StringRedisTemplate redisTemplate)` with compact constructor null-validation.
+     - `SharedRedisConfiguration.java`: Registered `ProviderStateManager` Spring bean.
+  2. **Order Processing Service (`ms/order-processing-service`)**:
+     - `RiskManager.java`: Injected `ProviderStateManager`. Refactored `ensureAccountCache` to enforce `stateManager.isProviderStateComplete(provider)`. Guarded order evaluation hot paths (`evaluateAndLock`, `validateAndLock`) with defensive `try-catch (MissingRedisStateException e)` blocks to safely handle unexpected state loss. Updated all calls to `redisFacade.redisTemplate()`.
+     - `SignalConsumer.java`: Removed hardcoded in-code fallback `:order-reject-events` from `@Value("${trading.topics.order-reject}")`.
+     - `RiskAdminController.java`: Modernized `providerBeans.get(0)` to Java 21 `SequencedCollection.getFirst()`.
+  3. **Order Management Service (`ms/order-management-service`)**:
+     - `ProviderHealthCheckJob.java`: Injected `ProviderStateManager`. State promotion to `ACTIVE` now requires **both** gRPC probe reachability (`HEALTHY`) **and** complete Redis non-defaultable keys (`providerStateManager.isProviderStateComplete(provider)`).
+     - `application.yml`: Explicitly declared `trading.health-check.interval-ms: 15000` and `trading.reconciliation.interval-ms: 30000`.
+     - `OrderCreateConsumer.java`: Extracted clean order entity mapping helper method `getTrackedOrderFromOrderCreateEvent(event)`.
+     - `EquityReconciliationService.java`: Updated all calls to `redisFacade.redisTemplate()`.
+- **Root Cause Analysis (RCA)**:
+  - *Symptom / Logic Gap*: Previously, `RiskManager.ensureAccountCache` checked only `balance:cash`, leaving unverified whether critical risk keys (`risk:config:max_daily_loss`, `risk:config:max_order_val`) existed in Redis. Concurrently, OMS `ProviderHealthCheckJob` marked providers `ACTIVE` whenever the gRPC connection manager responded, ignoring Redis keyspace completeness.
+  - *Consequence*: OMS would prematurely mark a provider `ACTIVE`. Once a trading signal arrived, OPS hot-path order validation would execute, fail fast on missing risk keys (`risk:config:max_order_val`), throw `MissingRedisStateException`, reject the order, and set `provider:status` to `INACTIVE`. On the subsequent 15-second tick, OMS would re-probe gRPC, see the connection manager healthy, and flip the status back to `ACTIVE`. This caused an unmitigated ping-pong state flapping loop.
+- **Fix & Safety Gates Implemented**:
+  - Encapsulated provider state verification in `ProviderStateManager`.
+  - State promotion to `ACTIVE` in both OPS startup probing and OMS health check is strictly blocked until all 6 non-defaultable keys are validated.
+  - Wrapped order validation with defensive exception handling in `RiskManager`.
+- **Deployment & Telemetry Evidence**:
+  - **Git Sync**: Remote host repository synchronized to commit `cdb8c7c` via `git_sync_remote`.
+  - **Docker Compose Rebuild**: Both `order-processing-service` and `order-management-service` packaged and redeployed via multi-stage Temurin 21 images.
+  - **`order-processing-service` Startup**:
+    - Bootstrap time: 16.701 seconds.
+    - Proactive probe: Connection manager `alpaca` reported `HEALTHY` (channel state: `IDLE`).
+    - `ProviderStateManager` validated Redis account cache and marked `alpaca` as `ACTIVE`.
+    - Kafka consumer group `ops-group` listening on `trading-signals` (partitions 0, 1, 2).
+  - **`order-management-service` Startup**:
+    - Bootstrap time: 19.663 seconds.
+    - `ProviderHealthCheckJob` verified gRPC and Redis keyspace completeness via `ProviderStateManager`, confirming `alpaca` as `ACTIVE`.
+    - Scheduled reconciliation job executed cleanly (0 pending orders).
+    - Status remained stable at `ACTIVE` with zero flapping observed.
+    - Kafka consumer group `oms-group` listening on `raw-order-updates` and `order-create-events`.
+  - **Container Fleet**: All 20/20 whitelisted containers confirmed `running` and healthy on remote Docker daemon.
