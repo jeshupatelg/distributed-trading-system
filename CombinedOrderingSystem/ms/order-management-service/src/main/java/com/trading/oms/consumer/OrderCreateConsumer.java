@@ -21,6 +21,7 @@ public class OrderCreateConsumer {
         this.objectMapper = objectMapper;
     }
 
+    @SuppressWarnings(value = "unused")
     @KafkaListener(topics = "${trading.topics.order-create}", groupId = "oms-group")
     public void consumeOrderCreate(String message) {
         log.info("Received order-create-event from Kafka: {}", message);
@@ -37,18 +38,7 @@ public class OrderCreateConsumer {
                 return;
             }
 
-            TrackedOrder order = new TrackedOrder();
-            order.setOrderId(event.orderId());
-            order.setSymbol(event.symbol());
-            order.setQty(event.qty());
-            order.setSide(event.side());
-            order.setOrderType(event.orderType());
-            order.setLimitPrice(event.limitPrice());
-            order.setStatus("PENDING");
-            order.setProvider(event.provider());
-            order.setStrategy(event.strategy());
-            order.setFilledQty(0);
-            order.setFilledAvgPrice(0.0);
+            TrackedOrder order = getTrackedOrderFromOrderCreateEvent(event);
 
             orderRepository.save(order);
             log.info("Saved initial PENDING order record for ID: {} to database.", event.orderId());
@@ -56,5 +46,21 @@ public class OrderCreateConsumer {
         } catch (Exception e) {
             log.error("Failed to process order-create-event from Kafka: {}", message, e);
         }
+    }
+
+    private static TrackedOrder getTrackedOrderFromOrderCreateEvent(OrderCreateEvent event) {
+        TrackedOrder order = new TrackedOrder();
+        order.setOrderId(event.orderId());
+        order.setSymbol(event.symbol());
+        order.setQty(event.qty());
+        order.setSide(event.side());
+        order.setOrderType(event.orderType());
+        order.setLimitPrice(event.limitPrice());
+        order.setStatus("PENDING");
+        order.setProvider(event.provider());
+        order.setStrategy(event.strategy());
+        order.setFilledQty(0);
+        order.setFilledAvgPrice(0.0);
+        return order;
     }
 }

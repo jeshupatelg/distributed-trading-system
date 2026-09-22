@@ -36,6 +36,10 @@ trading:
     order-create: ${KAFKA_TOPIC_ORDER_CREATE:order-create-events}
     raw-updates: ${KAFKA_TOPIC_RAW_ORDER_UPDATES:raw-order-updates}
     order-complete: ${KAFKA_TOPIC_ORDER_COMPLETE:order-complete-events}
+  health-check:
+    interval-ms: ${HEALTH_CHECK_INTERVAL_MS:15000}
+  reconciliation:
+    interval-ms: ${RECONCILIATION_INTERVAL_MS:30000}
   # Maps registered trading providers to endpoints and market metadata for reconciliation & day equity resets
   providers:
     alpaca:

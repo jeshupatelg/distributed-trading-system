@@ -67,7 +67,7 @@ public class EquityReconciliationService {
     }
 
     /**
-     * Public reusable method for mid-day / on-demand UI triggers.
+     * Public reusable method for midday / on-demand UI triggers.
      * Queries broker for live balance and resyncs Redis cash balance without resetting starting_equity.
      */
     public AccountDetailsResponse reconcileLiveBalance(String provider) {
@@ -101,13 +101,13 @@ public class EquityReconciliationService {
     private double calculateOpenPositionsValue(String provider) {
         String prov = provider.toLowerCase().trim();
         String posPrefix = "positions:" + prov + ":";
-        Set<String> keys = redisFacade.getRedisTemplate().keys(posPrefix + "*");
+        Set<String> keys = redisFacade.redisTemplate().keys(posPrefix + "*");
         if (keys == null || keys.isEmpty()) {
             return 0.0;
         }
         double totalVal = 0.0;
         for (String k : keys) {
-            String posStr = redisFacade.getRedisTemplate().opsForValue().get(k);
+            String posStr = redisFacade.redisTemplate().opsForValue().get(k);
             if (posStr != null) {
                 int qty = Integer.parseInt(posStr.trim());
                 String symbol = k.substring(posPrefix.length()).toUpperCase();

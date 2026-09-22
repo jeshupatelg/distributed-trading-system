@@ -8,7 +8,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -33,7 +32,7 @@ public class RiskAdminController {
             return provider.toLowerCase().trim();
         }
         if (providerBeans != null && !providerBeans.isEmpty()) {
-            return providerBeans.get(0).getName();
+            return providerBeans.getFirst().getName();
         }
         throw new IllegalArgumentException("No broker providers configured");
     }

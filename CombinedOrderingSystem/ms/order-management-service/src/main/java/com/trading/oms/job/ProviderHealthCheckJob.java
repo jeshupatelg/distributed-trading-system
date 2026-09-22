@@ -3,7 +3,7 @@ package com.trading.oms.job;
 import com.trading.oms.service.ReconciliationClient;
 import com.trading.shared.config.ProviderConfig;
 import com.trading.shared.redis.RedisKeyDef;
-import com.trading.shared.redis.TradingRedisFacade;
+import com.trading.shared.state.ProviderStateManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -17,20 +17,21 @@ public class ProviderHealthCheckJob {
 
     private final List<ProviderConfig> providerBeans;
     private final ReconciliationClient reconciliationClient;
-    private final TradingRedisFacade redisFacade;
+    private final ProviderStateManager providerStateManager;
 
     public ProviderHealthCheckJob(List<ProviderConfig> providerBeans,
                                   ReconciliationClient reconciliationClient,
-                                  TradingRedisFacade redisFacade) {
+                                  ProviderStateManager providerStateManager) {
         this.providerBeans = providerBeans;
         this.reconciliationClient = reconciliationClient;
-        this.redisFacade = redisFacade;
+        this.providerStateManager = providerStateManager;
     }
 
     /**
      * Periodically checks health status of registered providers.
      * Skips reconnection attempts for incomplete configurations.
-     * Restores INACTIVE providers to ACTIVE in Redis upon gRPC connectivity recovery.
+     * Restores INACTIVE providers to ACTIVE in Redis ONLY when both gRPC connectivity
+     * is healthy AND all mandatory non-defaultable Redis state keys exist.
      */
     @Scheduled(fixedDelayString = "${trading.health-check.interval-ms:15000}")
     public void checkAndRecoverInactiveProviders() {
@@ -49,20 +50,29 @@ public class ProviderHealthCheckJob {
                 log.warn("Provider '{}' configuration is INCOMPLETE (endpoint='{}', timezone='{}', exchange='{}'). Skipping reconnection retry.",
                     prov, p.getEndpoint(), p.getTimezone(), p.getExchange());
                 p.setActive(false);
-                redisFacade.setString(RedisKeyDef.PROVIDER_STATUS, prov, "INACTIVE");
+                providerStateManager.markProviderInactive(prov);
                 continue;
             }
 
-            String currentStatus = redisFacade.getString(RedisKeyDef.PROVIDER_STATUS, prov);
+            String currentStatus = providerStateManager.getProviderStatus(prov);
             boolean isInactive = "INACTIVE".equalsIgnoreCase(currentStatus) || !p.isActive();
 
             if (isInactive) {
                 log.info("Provider '{}' is currently INACTIVE. Probing gRPC connection manager health...", prov);
-                boolean healthy = reconciliationClient.checkHealth(prov);
-                if (healthy) {
-                    p.setActive(true);
-                    redisFacade.setString(RedisKeyDef.PROVIDER_STATUS, prov, "ACTIVE");
-                    log.info("HEALTH RECOVERY: Provider '{}' connection manager is HEALTHY again! Restored status to ACTIVE in Redis.", prov);
+                boolean grpcHealthy = reconciliationClient.checkHealth(prov);
+                if (grpcHealthy) {
+                    List<RedisKeyDef> missingKeys = providerStateManager.getMissingRequiredProviderKeys(prov);
+                    if (missingKeys.isEmpty()) {
+                        p.setActive(true);
+                        providerStateManager.markProviderActive(prov);
+                        log.info("HEALTH RECOVERY: Provider '{}' connection manager is HEALTHY and Redis state is complete! Restored status to ACTIVE in Redis.", prov);
+                    } else {
+                        p.setActive(false);
+                        providerStateManager.markProviderInactive(prov);
+                        log.warn("Provider '{}' connection manager is HEALTHY via gRPC, but Redis state is incomplete (missing non-defaultable keys: {}). Retaining INACTIVE status.",
+                            prov, missingKeys);
+                        providerStateManager.reconcileProviderState(prov);
+                    }
                 } else {
                     log.debug("Provider '{}' connection manager remains UNHEALTHY. Retrying next cycle.", prov);
                 }

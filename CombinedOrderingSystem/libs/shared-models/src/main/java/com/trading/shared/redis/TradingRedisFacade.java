@@ -13,21 +13,14 @@ import java.util.Set;
  * Provides typed accessors, automated fail-fast validation for strict keys,
  * centralized Redis-backed defaulting, and authorized ADR market price resolution.
  */
-public class TradingRedisFacade {
+public record TradingRedisFacade(StringRedisTemplate redisTemplate) {
 
     private static final Logger log = LoggerFactory.getLogger(TradingRedisFacade.class);
 
-    private final StringRedisTemplate redisTemplate;
-
-    public TradingRedisFacade(StringRedisTemplate redisTemplate) {
+    public TradingRedisFacade {
         if (redisTemplate == null) {
             throw new IllegalArgumentException("StringRedisTemplate must not be null");
         }
-        this.redisTemplate = redisTemplate;
-    }
-
-    public StringRedisTemplate getRedisTemplate() {
-        return redisTemplate;
     }
 
     // =========================================================================

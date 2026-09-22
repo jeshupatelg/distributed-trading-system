@@ -29,7 +29,7 @@ public class SignalConsumer {
     @Value("${trading.topics.order-create}")
     private String orderCreateTopic;
 
-    @Value("${trading.topics.order-reject:order-reject-events}")
+    @Value("${trading.topics.order-reject}")
     private String orderRejectTopic;
 
     public SignalConsumer(RiskManager riskManager, 

@@ -5,6 +5,7 @@ import com.trading.shared.redis.MissingRedisStateException;
 import com.trading.shared.redis.RedisKeyBuilder;
 import com.trading.shared.redis.RedisKeyDef;
 import com.trading.shared.redis.TradingRedisFacade;
+import com.trading.shared.state.ProviderStateManager;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,13 +23,16 @@ public class RiskManager {
     private static final Logger log = LoggerFactory.getLogger(RiskManager.class);
 
     private final TradingRedisFacade redisFacade;
+    private final ProviderStateManager providerStateManager;
     private final List<ProviderConfig> providerBeans;
     private final OrderExecutionClient orderExecutionClient;
 
     public RiskManager(TradingRedisFacade redisFacade,
+                       ProviderStateManager providerStateManager,
                        List<ProviderConfig> providerBeans,
                        @org.springframework.context.annotation.Lazy OrderExecutionClient orderExecutionClient) {
         this.redisFacade = redisFacade;
+        this.providerStateManager = providerStateManager;
         this.providerBeans = providerBeans;
         this.orderExecutionClient = orderExecutionClient;
     }
@@ -41,7 +45,7 @@ public class RiskManager {
                     String prov = normalizeProvider(p.getName());
                     if (!p.isConfigComplete()) {
                         p.setActive(false);
-                        redisFacade.setString(RedisKeyDef.PROVIDER_STATUS, prov, "INACTIVE");
+                        providerStateManager.markProviderInactive(prov);
                         log.warn("Provider '{}' configuration is INCOMPLETE (missing endpoint, timezone, or exchange). Config: {}. Marking INACTIVE.", prov, formatSanitizedConfig(p));
                         continue;
                     }
@@ -52,12 +56,12 @@ public class RiskManager {
                         boolean cacheValid = ensureAccountCache(prov);
                         if (cacheValid) {
                             p.setActive(true);
-                            redisFacade.setString(RedisKeyDef.PROVIDER_STATUS, prov, "ACTIVE");
+                            providerStateManager.markProviderActive(prov);
                             log.info("Provider '{}' connection manager & account cache are ACTIVE.", prov);
                         }
                     } else {
                         p.setActive(false);
-                        redisFacade.setString(RedisKeyDef.PROVIDER_STATUS, prov, "INACTIVE");
+                        providerStateManager.markProviderInactive(prov);
                         log.warn("Provider '{}' connection manager is UNREACHABLE/UNHEALTHY. Config: {}. Status set to INACTIVE.", prov, formatSanitizedConfig(p));
                     }
                 }
@@ -98,7 +102,7 @@ public class RiskManager {
         if (config != null) {
             config.setActive(false);
         }
-        redisFacade.setString(RedisKeyDef.PROVIDER_STATUS, prov, "INACTIVE");
+        providerStateManager.markProviderInactive(prov);
         log.warn("Marked provider '{}' INACTIVE in-memory and in Redis. Config: {}", prov, formatSanitizedConfig(config));
     }
 
@@ -112,7 +116,7 @@ public class RiskManager {
         if (config != null) {
             config.setActive(true);
         }
-        redisFacade.setString(RedisKeyDef.PROVIDER_STATUS, prov, "ACTIVE");
+        providerStateManager.markProviderActive(prov);
         log.info("Marked provider '{}' ACTIVE in-memory and in Redis.", prov);
     }
 
@@ -149,123 +153,135 @@ public class RiskManager {
         }
 
         // 2. Daily Loss Gate Check (Strictly Fail-Fast if limits/balances missing)
-        double maxDailyLoss = redisFacade.getDouble(RedisKeyDef.RISK_CONFIG_MAX_DAILY_LOSS, prov);
-        double startingEquity = redisFacade.getDouble(RedisKeyDef.BALANCE_STARTING_EQUITY, prov);
-        double currentCash = redisFacade.getDouble(RedisKeyDef.BALANCE_CASH, prov);
-        double blockedMargin = redisFacade.getDouble(RedisKeyDef.BALANCE_BLOCKED, prov);
-        double positionsVal = calculateOpenPositionsValue(prov);
-        double totalEquity = currentCash + positionsVal;
-        double currentDailyDrawdown = startingEquity - totalEquity;
-
-        if (maxDailyLoss > 0 && currentDailyDrawdown >= maxDailyLoss) {
-            log.warn("RISK REJECTED: Daily Loss Limit Breach for provider {}. StartingEquity={}, TotalEquity={}, Drawdown={}, Cap={}",
-                prov, startingEquity, totalEquity, currentDailyDrawdown, maxDailyLoss);
-            return new RiskDecision(false, "DAILY_LOSS_LIMIT_EXCEEDED", "DAILY_LOSS", estimatedCost, 0.0);
-        }
-
-        // 3. Price Collar Check (Deviation Check against Redis Reference Price)
         try {
-            double refPrice = redisFacade.getMarketPrice(prov, symbol);
-            double priceCollarPct = redisFacade.getDouble(RedisKeyDef.RISK_CONFIG_PRICE_COLLAR_PCT, prov);
-            double maxAllowedDiff = refPrice * (priceCollarPct / 100.0);
-            if (Math.abs(price - refPrice) > maxAllowedDiff) {
-                log.warn("RISK REJECTED: Price Collar Violation for provider {} symbol {}. Signal Price={}, Ref Price={}, Max Collar Pct={}%",
-                    prov, symbol, price, refPrice, priceCollarPct);
-                return new RiskDecision(false, "PRICE_COLLAR_VIOLATION", "PRICE_COLLAR", estimatedCost, 0.0);
+            double maxDailyLoss = redisFacade.getDouble(RedisKeyDef.RISK_CONFIG_MAX_DAILY_LOSS, prov);
+            double startingEquity = redisFacade.getDouble(RedisKeyDef.BALANCE_STARTING_EQUITY, prov);
+            double currentCash = redisFacade.getDouble(RedisKeyDef.BALANCE_CASH, prov);
+            double blockedMargin = redisFacade.getDouble(RedisKeyDef.BALANCE_BLOCKED, prov);
+            double positionsVal = calculateOpenPositionsValue(prov);
+            double totalEquity = currentCash + positionsVal;
+            double currentDailyDrawdown = startingEquity - totalEquity;
+
+            if (maxDailyLoss > 0 && currentDailyDrawdown >= maxDailyLoss) {
+                log.warn("RISK REJECTED: Daily Loss Limit Breach for provider {}. StartingEquity={}, TotalEquity={}, Drawdown={}, Cap={}",
+                    prov, startingEquity, totalEquity, currentDailyDrawdown, maxDailyLoss);
+                return new RiskDecision(false, "DAILY_LOSS_LIMIT_EXCEEDED", "DAILY_LOSS", estimatedCost, 0.0);
             }
+
+            // 3. Price Collar Check (Deviation Check against Redis Reference Price)
+            try {
+                double refPrice = redisFacade.getMarketPrice(prov, symbol);
+                double priceCollarPct = redisFacade.getDouble(RedisKeyDef.RISK_CONFIG_PRICE_COLLAR_PCT, prov);
+                double maxAllowedDiff = refPrice * (priceCollarPct / 100.0);
+                if (Math.abs(price - refPrice) > maxAllowedDiff) {
+                    log.warn("RISK REJECTED: Price Collar Violation for provider {} symbol {}. Signal Price={}, Ref Price={}, Max Collar Pct={}%",
+                        prov, symbol, price, refPrice, priceCollarPct);
+                    return new RiskDecision(false, "PRICE_COLLAR_VIOLATION", "PRICE_COLLAR", estimatedCost, 0.0);
+                }
+            } catch (MissingRedisStateException e) {
+                log.warn("Market reference price missing for provider '{}' symbol '{}': {}. Bypassing price collar check.",
+                    prov, symbol, e.getMessage());
+            }
+
+            // 4. Velocity Rate Limiting Gates (Per Second & Per Minute Window)
+            int maxPerSec = redisFacade.getInteger(RedisKeyDef.RISK_CONFIG_VELOCITY_PER_SEC, prov);
+            int maxPerMin = redisFacade.getInteger(RedisKeyDef.RISK_CONFIG_VELOCITY_PER_MIN, prov);
+            long nowSec = Instant.now().getEpochSecond();
+            long nowMin = nowSec / 60;
+
+            String secKey = "risk:velocity:sec:" + prov + ":" + nowSec;
+            String minKey = "risk:velocity:min:" + prov + ":" + nowMin;
+
+            Long secCount = redisFacade.increment(secKey, 1L);
+            if (secCount != null && secCount == 1) redisFacade.expire(secKey, Duration.ofSeconds(2));
+
+            Long minCount = redisFacade.increment(minKey, 1L);
+            if (minCount != null && minCount == 1) redisFacade.expire(minKey, Duration.ofSeconds(120));
+
+            if (secCount != null && secCount > maxPerSec) {
+                log.warn("RISK REJECTED: Velocity Gate (Sec) Exceeded for provider {}. Count={}, Cap={}", prov, secCount, maxPerSec);
+                return new RiskDecision(false, "VELOCITY_PER_SECOND_EXCEEDED", "VELOCITY_SEC", estimatedCost, 0.0);
+            }
+
+            if (minCount != null && minCount > maxPerMin) {
+                log.warn("RISK REJECTED: Velocity Gate (Min) Exceeded for provider {}. Count={}, Cap={}", prov, minCount, maxPerMin);
+                return new RiskDecision(false, "VELOCITY_PER_MINUTE_EXCEEDED", "VELOCITY_MIN", estimatedCost, 0.0);
+            }
+
+            // 5. Single Order Limits (Qty & Value Cap)
+            int maxOrderQty = redisFacade.getInteger(RedisKeyDef.RISK_CONFIG_MAX_ORDER_QTY, prov);
+            double maxOrderVal = redisFacade.getDouble(RedisKeyDef.RISK_CONFIG_MAX_ORDER_VAL, prov);
+
+            if (qty > maxOrderQty) {
+                log.warn("RISK REJECTED: Max Order Qty Violation for provider {}. Qty={}, Cap={}", prov, qty, maxOrderQty);
+                return new RiskDecision(false, "MAX_ORDER_QTY_EXCEEDED", "SINGLE_ORDER_LIMIT", estimatedCost, 0.0);
+            }
+
+            if (estimatedCost > maxOrderVal) {
+                log.warn("RISK REJECTED: Max Order Value Violation for provider {}. Value={}, Cap={}", prov, estimatedCost, maxOrderVal);
+                return new RiskDecision(false, "MAX_ORDER_VALUE_EXCEEDED", "SINGLE_ORDER_LIMIT", estimatedCost, 0.0);
+            }
+
+            // 6. Portfolio Concentration Limit Gate
+            double maxConcentrationPct = redisFacade.getDouble(RedisKeyDef.RISK_CONFIG_MAX_CONCENTRATION_PCT, prov);
+            if (totalEquity > 0) {
+                double maxAllowedSymbolValue = totalEquity * (maxConcentrationPct / 100.0);
+                if (estimatedCost > maxAllowedSymbolValue) {
+                    log.warn("RISK REJECTED: Portfolio Concentration Cap Violation for provider {}. Order Cost={}, Max Symbol Alloc={} ({}% of Equity {})",
+                        prov, estimatedCost, maxAllowedSymbolValue, maxConcentrationPct, totalEquity);
+                    return new RiskDecision(false, "MAX_CONCENTRATION_EXCEEDED", "PORTFOLIO_CONCENTRATION", estimatedCost, 0.0);
+                }
+            }
+
+            // 7. Margin Availability & Account Balance Locking Gate
+            double availableCash = currentCash - blockedMargin;
+            if (availableCash < estimatedCost) {
+                log.warn("RISK REJECTED: Insufficient Margin for provider {}. Required={}, AvailableCash={} (Cash={}, Blocked={})",
+                    prov, estimatedCost, availableCash, currentCash, blockedMargin);
+                return new RiskDecision(false, "INSUFFICIENT_MARGIN", "MARGIN_LOCK", estimatedCost, 0.0);
+            }
+
+            // All Risk Gates Passed! Execute Margin Lock in Redis.
+            String blockedKey = RedisKeyBuilder.key(RedisKeyDef.BALANCE_BLOCKED, prov);
+            redisFacade.increment(blockedKey, estimatedCost);
+            redisFacade.addToSet(RedisKeyDef.ORDERS_PENDING, prov, orderId);
+
+            // Compute Dynamic Stop Loss Price
+            double stopLossPct = redisFacade.getDouble(RedisKeyDef.RISK_CONFIG_STOP_LOSS_PCT, prov);
+            double stopLossPrice = 0.0;
+            if ("BUY".equalsIgnoreCase(side)) {
+                stopLossPrice = price * (1.0 - (stopLossPct / 100.0));
+            } else if ("SELL".equalsIgnoreCase(side)) {
+                stopLossPrice = price * (1.0 + (stopLossPct / 100.0));
+            }
+
+            log.info("Risk checks PASSED for order {} (provider {}). Margin locked: {}, Stop Loss Price: {}", orderId, prov, estimatedCost, String.format("%.2f", stopLossPrice));
+            return new RiskDecision(true, "APPROVED", "NONE", estimatedCost, stopLossPrice);
+
         } catch (MissingRedisStateException e) {
-            log.warn("Market reference price missing for provider '{}' symbol '{}': {}. Bypassing price collar check.",
-                prov, symbol, e.getMessage());
+            log.warn("RISK REJECTED: Mandatory Redis risk/account state missing for provider '{}': {}. Rejecting order {}",
+                prov, e.getMessage(), orderId);
+            return new RiskDecision(false, "MISSING_RISK_STATE: " + e.getMessage(), "RISK_CONFIGURATION", estimatedCost, 0.0);
         }
-
-        // 4. Velocity Rate Limiting Gates (Per Second & Per Minute Window)
-        int maxPerSec = redisFacade.getInteger(RedisKeyDef.RISK_CONFIG_VELOCITY_PER_SEC, prov);
-        int maxPerMin = redisFacade.getInteger(RedisKeyDef.RISK_CONFIG_VELOCITY_PER_MIN, prov);
-        long nowSec = Instant.now().getEpochSecond();
-        long nowMin = nowSec / 60;
-
-        String secKey = "risk:velocity:sec:" + prov + ":" + nowSec;
-        String minKey = "risk:velocity:min:" + prov + ":" + nowMin;
-
-        Long secCount = redisFacade.increment(secKey, 1L);
-        if (secCount != null && secCount == 1) redisFacade.expire(secKey, Duration.ofSeconds(2));
-
-        Long minCount = redisFacade.increment(minKey, 1L);
-        if (minCount != null && minCount == 1) redisFacade.expire(minKey, Duration.ofSeconds(120));
-
-        if (secCount != null && secCount > maxPerSec) {
-            log.warn("RISK REJECTED: Velocity Gate (Sec) Exceeded for provider {}. Count={}, Cap={}", prov, secCount, maxPerSec);
-            return new RiskDecision(false, "VELOCITY_PER_SECOND_EXCEEDED", "VELOCITY_SEC", estimatedCost, 0.0);
-        }
-
-        if (minCount != null && minCount > maxPerMin) {
-            log.warn("RISK REJECTED: Velocity Gate (Min) Exceeded for provider {}. Count={}, Cap={}", prov, minCount, maxPerMin);
-            return new RiskDecision(false, "VELOCITY_PER_MINUTE_EXCEEDED", "VELOCITY_MIN", estimatedCost, 0.0);
-        }
-
-        // 5. Single Order Limits (Qty & Value Cap)
-        int maxOrderQty = redisFacade.getInteger(RedisKeyDef.RISK_CONFIG_MAX_ORDER_QTY, prov);
-        double maxOrderVal = redisFacade.getDouble(RedisKeyDef.RISK_CONFIG_MAX_ORDER_VAL, prov);
-
-        if (qty > maxOrderQty) {
-            log.warn("RISK REJECTED: Max Order Qty Violation for provider {}. Qty={}, Cap={}", prov, qty, maxOrderQty);
-            return new RiskDecision(false, "MAX_ORDER_QTY_EXCEEDED", "SINGLE_ORDER_LIMIT", estimatedCost, 0.0);
-        }
-
-        if (estimatedCost > maxOrderVal) {
-            log.warn("RISK REJECTED: Max Order Value Violation for provider {}. Value={}, Cap={}", prov, estimatedCost, maxOrderVal);
-            return new RiskDecision(false, "MAX_ORDER_VALUE_EXCEEDED", "SINGLE_ORDER_LIMIT", estimatedCost, 0.0);
-        }
-
-        // 6. Portfolio Concentration Limit Gate
-        double maxConcentrationPct = redisFacade.getDouble(RedisKeyDef.RISK_CONFIG_MAX_CONCENTRATION_PCT, prov);
-        if (totalEquity > 0) {
-            double maxAllowedSymbolValue = totalEquity * (maxConcentrationPct / 100.0);
-            if (estimatedCost > maxAllowedSymbolValue) {
-                log.warn("RISK REJECTED: Portfolio Concentration Cap Violation for provider {}. Order Cost={}, Max Symbol Alloc={} ({}% of Equity {})",
-                    prov, estimatedCost, maxAllowedSymbolValue, maxConcentrationPct, totalEquity);
-                return new RiskDecision(false, "MAX_CONCENTRATION_EXCEEDED", "PORTFOLIO_CONCENTRATION", estimatedCost, 0.0);
-            }
-        }
-
-        // 7. Margin Availability & Account Balance Locking Gate
-        double availableCash = currentCash - blockedMargin;
-        if (availableCash < estimatedCost) {
-            log.warn("RISK REJECTED: Insufficient Margin for provider {}. Required={}, AvailableCash={} (Cash={}, Blocked={})",
-                prov, estimatedCost, availableCash, currentCash, blockedMargin);
-            return new RiskDecision(false, "INSUFFICIENT_MARGIN", "MARGIN_LOCK", estimatedCost, 0.0);
-        }
-
-        // All Risk Gates Passed! Execute Margin Lock in Redis.
-        String blockedKey = RedisKeyBuilder.key(RedisKeyDef.BALANCE_BLOCKED, prov);
-        redisFacade.increment(blockedKey, estimatedCost);
-        redisFacade.addToSet(RedisKeyDef.ORDERS_PENDING, prov, orderId);
-
-        // Compute Dynamic Stop Loss Price
-        double stopLossPct = redisFacade.getDouble(RedisKeyDef.RISK_CONFIG_STOP_LOSS_PCT, prov);
-        double stopLossPrice = 0.0;
-        if ("BUY".equalsIgnoreCase(side)) {
-            stopLossPrice = price * (1.0 - (stopLossPct / 100.0));
-        } else if ("SELL".equalsIgnoreCase(side)) {
-            stopLossPrice = price * (1.0 + (stopLossPct / 100.0));
-        }
-
-        log.info("Risk checks PASSED for order {} (provider {}). Margin locked: {}, Stop Loss Price: {}", orderId, prov, estimatedCost, String.format("%.2f", stopLossPrice));
-        return new RiskDecision(true, "APPROVED", "NONE", estimatedCost, stopLossPrice);
     }
 
     public synchronized boolean validateAndLock(String orderId, double estimatedValue, String provider) {
         String prov = normalizeProvider(provider);
-        double cash = redisFacade.getDouble(RedisKeyDef.BALANCE_CASH, prov);
-        double blocked = redisFacade.getDouble(RedisKeyDef.BALANCE_BLOCKED, prov);
-        double available = cash - blocked;
-        if (available >= estimatedValue) {
-            String blockedKey = RedisKeyBuilder.key(RedisKeyDef.BALANCE_BLOCKED, prov);
-            redisFacade.increment(blockedKey, estimatedValue);
-            redisFacade.addToSet(RedisKeyDef.ORDERS_PENDING, prov, orderId);
-            return true;
+        try {
+            double cash = redisFacade.getDouble(RedisKeyDef.BALANCE_CASH, prov);
+            double blocked = redisFacade.getDouble(RedisKeyDef.BALANCE_BLOCKED, prov);
+            double available = cash - blocked;
+            if (available >= estimatedValue) {
+                String blockedKey = RedisKeyBuilder.key(RedisKeyDef.BALANCE_BLOCKED, prov);
+                redisFacade.increment(blockedKey, estimatedValue);
+                redisFacade.addToSet(RedisKeyDef.ORDERS_PENDING, prov, orderId);
+                return true;
+            }
+            return false;
+        } catch (MissingRedisStateException e) {
+            log.warn("validateAndLock failed: Missing state in Redis for provider '{}': {}", prov, e.getMessage());
+            return false;
         }
-        return false;
     }
 
     /**
@@ -383,17 +399,11 @@ public class RiskManager {
 
     private boolean ensureAccountCache(String provider) {
         String prov = normalizeProvider(provider);
-        String cashKey = RedisKeyBuilder.key(RedisKeyDef.BALANCE_CASH, prov);
-        String blockedKey = RedisKeyBuilder.key(RedisKeyDef.BALANCE_BLOCKED, prov);
-        String startingEquityKey = RedisKeyBuilder.key(RedisKeyDef.BALANCE_STARTING_EQUITY, prov);
+        List<RedisKeyDef> missing = providerStateManager.getMissingRequiredProviderKeys(prov);
 
-        boolean hasCash = redisFacade.hasKey(cashKey);
-        boolean hasBlocked = redisFacade.hasKey(blockedKey);
-        boolean hasStartingEquity = redisFacade.hasKey(startingEquityKey);
-
-        if (!hasCash || !hasBlocked || !hasStartingEquity) {
-            log.warn("Account cache init-check FAILED for provider '{}'. Missing Redis state keys (cash={}, blocked={}, startingEquity={}). Marking provider INACTIVE.",
-                prov, hasCash, hasBlocked, hasStartingEquity);
+        if (!missing.isEmpty()) {
+            log.warn("Account state init-check FAILED for provider '{}'. Missing mandatory non-defaultable Redis keys: {}. Marking provider INACTIVE.",
+                prov, missing);
             markProviderInactive(prov);
             return false;
         }
@@ -403,13 +413,13 @@ public class RiskManager {
     private double calculateOpenPositionsValue(String provider) {
         String prov = normalizeProvider(provider);
         String posPrefix = "positions:" + prov + ":";
-        Set<String> keys = redisFacade.getRedisTemplate().keys(posPrefix + "*");
+        Set<String> keys = redisFacade.redisTemplate().keys(posPrefix + "*");
         if (keys == null || keys.isEmpty()) {
             return 0.0;
         }
         double totalVal = 0.0;
         for (String k : keys) {
-            String posStr = redisFacade.getRedisTemplate().opsForValue().get(k);
+            String posStr = redisFacade.redisTemplate().opsForValue().get(k);
             if (posStr != null) {
                 int qty = Integer.parseInt(posStr.trim());
                 String symbol = k.substring(posPrefix.length()).toUpperCase();
