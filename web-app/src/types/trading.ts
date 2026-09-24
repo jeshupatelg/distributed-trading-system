@@ -49,3 +49,16 @@ export interface ServiceHealth {
   latencyMs?: number;
   lastChecked: string;
 }
+
+export interface PaginationInfo {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface PaginatedOrdersResponse {
+  orders: Order[];
+  pagination: PaginationInfo;
+}
+

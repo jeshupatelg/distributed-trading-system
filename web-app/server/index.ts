@@ -198,13 +198,99 @@ async function main() {
     }
   });
 
-  // 4. Order Feed Proxy (Direct Read-Only DB Query from PostgreSQL)
+  // 4. Order Feed Proxy (Direct Read-Only DB Query from PostgreSQL with Filtering & Pagination)
   server.get("/api/v1/orders", async (req, reply) => {
-    const { symbol, provider, limit = "50" } = req.query as { symbol?: string; provider?: string; limit?: string };
-    const queryLimit = Math.min(parseInt(limit, 10) || 50, 100);
+    const {
+      symbol,
+      side,
+      status,
+      strategy,
+      provider,
+      dateRange,
+      startDate,
+      endDate,
+      page = "1",
+      limit = "25",
+    } = req.query as {
+      symbol?: string;
+      side?: string;
+      status?: string;
+      strategy?: string;
+      provider?: string;
+      dateRange?: string;
+      startDate?: string;
+      endDate?: string;
+      page?: string;
+      limit?: string;
+    };
+
+    const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+    const pageLimit = Math.min(Math.max(parseInt(limit, 10) || 25, 1), 100);
+    const offset = (pageNum - 1) * pageLimit;
 
     try {
-      let query = `
+      const conditions: string[] = [];
+      const params: any[] = [];
+
+      if (symbol && symbol !== "ALL") {
+        params.push(symbol.toUpperCase());
+        conditions.push(`symbol = $${params.length}`);
+      }
+      if (side && side !== "ALL") {
+        params.push(side.toUpperCase());
+        conditions.push(`side = $${params.length}`);
+      }
+      if (status && status !== "ALL") {
+        params.push(status.toUpperCase());
+        conditions.push(`status = $${params.length}`);
+      }
+      if (strategy && strategy !== "ALL") {
+        params.push(strategy);
+        conditions.push(`strategy = $${params.length}`);
+      }
+      if (provider && provider !== "ALL") {
+        params.push(provider.toLowerCase());
+        conditions.push(`provider = $${params.length}`);
+      }
+
+      // Date Filtering
+      if (dateRange && dateRange !== "all") {
+        if (dateRange === "today") {
+          conditions.push(`created_at >= CURRENT_DATE`);
+        } else if (dateRange === "24h") {
+          conditions.push(`created_at >= NOW() - INTERVAL '24 hours'`);
+        } else if (dateRange === "7d") {
+          conditions.push(`created_at >= NOW() - INTERVAL '7 days'`);
+        } else if (dateRange === "30d") {
+          conditions.push(`created_at >= NOW() - INTERVAL '30 days'`);
+        }
+      } else {
+        if (startDate) {
+          params.push(new Date(startDate).toISOString());
+          conditions.push(`created_at >= $${params.length}`);
+        }
+        if (endDate) {
+          params.push(new Date(endDate).toISOString());
+          conditions.push(`created_at <= $${params.length}`);
+        }
+      }
+
+      const whereClause = conditions.length > 0 ? ` WHERE ` + conditions.join(" AND ") : "";
+
+      // 1. Total Count Query for pagination
+      const countQuery = `SELECT COUNT(*) as total FROM tracked_orders${whereClause}`;
+      const countRes = await dbPool.query(countQuery, params);
+      const total = parseInt(countRes.rows[0]?.total || "0", 10);
+      const totalPages = Math.ceil(total / pageLimit) || 1;
+
+      // 2. Paginated Data Query
+      const dataParams = [...params];
+      dataParams.push(pageLimit);
+      const limitIndex = dataParams.length;
+      dataParams.push(offset);
+      const offsetIndex = dataParams.length;
+
+      const dataQuery = `
         SELECT 
           order_id,
           symbol,
@@ -218,52 +304,55 @@ async function main() {
           filled_avg_price,
           created_at
         FROM tracked_orders
+        ${whereClause}
+        ORDER BY created_at DESC 
+        LIMIT $${limitIndex} OFFSET $${offsetIndex}
       `;
-      const conditions: string[] = [];
-      const params: any[] = [];
 
-      if (symbol) {
-        params.push(symbol.toUpperCase());
-        conditions.push(`symbol = $${params.length}`);
-      }
-      if (provider) {
-        params.push(provider.toLowerCase());
-        conditions.push(`provider = $${params.length}`);
-      }
+      const { rows } = await dbPool.query(dataQuery, dataParams);
 
-      if (conditions.length > 0) {
-        query += ` WHERE ` + conditions.join(" AND ");
-      }
+      const orders = (rows || []).map((r: any) => ({
+        orderId: r.order_id,
+        symbol: r.symbol,
+        side: r.side,
+        qty: r.qty,
+        price: r.limit_price ? parseFloat(r.limit_price) : 0,
+        status: r.status,
+        provider: r.provider || "alpaca",
+        strategy: r.strategy || "Manual",
+        filledQty: r.filled_qty ? parseInt(r.filled_qty, 10) : 0,
+        filledAvgPrice: r.filled_avg_price ? parseFloat(r.filled_avg_price) : 0,
+        timestamp: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+      }));
 
-      params.push(queryLimit);
-      query += ` ORDER BY created_at DESC LIMIT $${params.length}`;
+      reply.header("X-Data-Source", "PostgreSQL-Read-Direct");
+      reply.header("X-Total-Count", total.toString());
+      reply.header("X-Page", pageNum.toString());
+      reply.header("X-Total-Pages", totalPages.toString());
 
-      const { rows } = await dbPool.query(query, params);
-
-      if (rows && rows.length > 0) {
-        const orders = rows.map((r: any) => ({
-          orderId: r.order_id,
-          symbol: r.symbol,
-          side: r.side,
-          qty: r.qty,
-          price: r.limit_price ? parseFloat(r.limit_price) : 0,
-          status: r.status,
-          provider: r.provider || "alpaca",
-          strategy: r.strategy || "Manual",
-          filledQty: r.filled_qty ? parseInt(r.filled_qty, 10) : 0,
-          filledAvgPrice: r.filled_avg_price ? parseFloat(r.filled_avg_price) : 0,
-          timestamp: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
-        }));
-
-        reply.header("X-Data-Source", "PostgreSQL-Read-Direct");
-        return reply.send(orders);
-      }
+      return reply.send({
+        orders,
+        pagination: {
+          page: pageNum,
+          limit: pageLimit,
+          total,
+          totalPages,
+        },
+      });
     } catch (err: any) {
       server.log.warn(`[BFF] Failed querying PostgreSQL tracked_orders: ${err.message}`);
     }
 
     reply.header("X-Data-Source", "Empty-Buffer");
-    return reply.send([]);
+    return reply.send({
+      orders: [],
+      pagination: {
+        page: pageNum,
+        limit: pageLimit,
+        total: 0,
+        totalPages: 1,
+      },
+    });
   });
 
   // 5. System Health & Telemetry Aggregation

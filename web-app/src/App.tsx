@@ -4,6 +4,7 @@ import { RiskCenter } from "./components/RiskCenter";
 import { InformativeRiskCards } from "./components/InformativeRiskCards";
 import { ChartSection } from "./components/ChartSection";
 import { OrderBook } from "./components/OrderBook";
+import { RecentOrders } from "./components/RecentOrders";
 import { TelemetryMatrix } from "./components/TelemetryMatrix";
 import { useTradingStream } from "./hooks/useTradingStream";
 import { RiskStatus, Order } from "./types/trading";
@@ -27,10 +28,11 @@ export default function App() {
 
   // Fetch initial orders from BFF
   const fetchOrders = useCallback(() => {
-    fetch(`/api/v1/orders?provider=${selectedProvider}`)
+    fetch(`/api/v1/orders?provider=${selectedProvider}&limit=25`)
       .then((res) => res.json())
-      .then((data: Order[]) => {
-        if (Array.isArray(data)) setOrders(data);
+      .then((data: any) => {
+        const list = Array.isArray(data) ? data : data?.orders;
+        if (Array.isArray(list)) setOrders(list);
       })
       .catch((err) => console.error("Error fetching orders:", err));
   }, [selectedProvider]);
@@ -124,8 +126,8 @@ export default function App() {
               </div>
             </div>
 
-            {/* Bottom Dock: Order Audit Trail & Execution Feed */}
-            <OrderBook orders={allOrders} />
+            {/* Bottom Dock: Recent Orders (Latest 5) */}
+            <RecentOrders orders={allOrders} onViewAll={() => setActiveTab("orders")} />
           </div>
         )}
 
@@ -137,7 +139,7 @@ export default function App() {
 
         {activeTab === "orders" && (
           <div className="space-y-6">
-            <OrderBook orders={allOrders} />
+            <OrderBook provider={selectedProvider} />
           </div>
         )}
 

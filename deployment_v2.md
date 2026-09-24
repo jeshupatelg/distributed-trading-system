@@ -420,5 +420,85 @@
      - Replaced the offline warning banner with a sleek green `PostgreSQL Direct Read Pool (SQL LIVE FEED)` status ribbon.
      - Added filter chips (`ALL`, `COMPLETED`, `FILLED`, `REJECTED`, `PENDING`) and display of strategy names and execution timestamps.
 
+---
+
+### Deployment Action 12: Streamline Cockpit View with Compact Recent Orders (2026-09-24)
+- **Objective**: Replace the heavy 50-event "Execution Audit Trail & Order Feed" table from the main Trading Cockpit tab with a compact, dedicated "Recent Orders" component showing the latest 5 orders. Preserve the full 50+ event audit trail, filters, and SQL diagnostics in the dedicated "Order Audit Trail" tab.
+- **Root Cause & UX Optimization**:
+  1. The full OrderBook component in the main Cockpit view was vertically lengthy (displaying up to 50 rows plus full diagnostic diagnostics, ribbons, and filter chips), forcing excessive page scrolling under the chart.
+  2. Traders need quick visibility into recent execution status without cognitive overload in the primary monitoring dashboard, while retaining the ability to jump directly into the detailed audit log when needed.
+- **Fix Applied**:
+  1. **New Component (`web-app/src/components/RecentOrders.tsx`)**:
+     - Built a compact 5-order execution table displaying Time, truncated Order ID, Symbol, Side badge (`BUY`/`SELL`), Quantity, Price, Status badge (`COMPLETED`/`FILLED`/`FAILED`/`PENDING`), and Strategy.
+     - Added a clean "View full audit trail →" action button that switches navigation directly to the "Order Audit Trail" tab.
+  2. **Dashboard Navigation (`web-app/src/App.tsx`)**:
+     - Replaced `<OrderBook orders={allOrders} />` with `<RecentOrders orders={allOrders} onViewAll={() => setActiveTab("orders")} />` in the `cockpit` tab.
+     - Kept `<OrderBook orders={allOrders} />` in the `orders` tab for deep auditing and filtering.
+  3. **Verification**:
+     - Built frontend bundle `dist/assets/index-DC1UhpRu.js`.
+     - Deployed via `deploy_compose_stack` and restarted `web-app` container on remote daemon.
+     - Verified clean HTTP 200 responses and live WebSocket connectivity.
+
+---
+
+### Deployment Action 13: Expandable Order ID Drawers & Table Streamlining (2026-09-24)
+- **Objective**: Remove the "Latest 5" tag from Recent Orders, remove the `Order ID` column from the main collapsed table rows in both Recent Orders and Order Audit Trail, and make rows interactively expandable to reveal the full un-truncated Order ID with a one-click Copy button and detailed execution diagnostics.
+- **Root Cause & UX Optimization**:
+  1. Displaying long UUIDs directly in table columns consumed significant horizontal space, causing truncated ellipsis values (`9faf47bb...`) that could not be read or easily copied.
+  2. The "Latest 5" pill tag was redundant alongside the clear section title and navigation controls.
+  3. Having rows expandable on-click provides a clean high-level view while allowing immediate drill-down into full UUIDs, exact UTC timestamps, broker venues, strategies, fill metrics, and rejection diagnostics without cluttering the primary grid.
+- **Fix Applied**:
+  1. **Recent Orders (`web-app/src/components/RecentOrders.tsx`)**:
+     - Removed the `"Latest 5"` tag from the card header.
+     - Removed the `Order ID` column from the table headers and collapsed row cells.
+     - Added an interactive chevron indicator (`ChevronRight` / `ChevronDown`) in the first column and `cursor-pointer` row toggle.
+     - Implemented an animated/styled expandable drawer displaying:
+       - Full un-truncated Order ID (`order.orderId`) with select-all styling.
+       - One-click **Copy** button with temporary `Copied` confirmation feedback.
+       - Complete ISO UTC timestamp.
+       - Strategy, Broker Venue, Filled / Total Quantity, and Filled Average Price metric tiles.
+       - Highlighted failure/rejection diagnostic banner if present.
+  2. **Order Audit Trail (`web-app/src/components/OrderBook.tsx`)**:
+     - Applied the identical expandable row architecture and removed the `Order ID` column from the table headers and collapsed row cells.
+     - Maintained status filter chips, events count, and PostgreSQL direct read status indicator.
+  3. **Verification**:
+     - Built bundle `dist/assets/index-Yqj-NCs0.js`.
+     - Deployed via `deploy_compose_stack` and restarted `web-app` container.
+     - Verified HTTP 200 and live WebSocket stream on `http://192.168.29.96:3030`.
+
+---
+
+### Deployment Action 14: Server-Side Order Filtering & Fixed 25-Row Pagination (2026-09-24)
+- **Objective**: Implement comprehensive database-level order filtering (Date presets, Status, Symbol, Side, Strategy) and fixed 25-record pagination with navigation controls (`[Previous] Page X of Y [Next]`) on the Order Audit Trail view. Exclude Order ID search per user directive while preserving expandable row UUID inspections.
+- **Root Cause & Architectural Decision**:
+  1. Client-side filtering of only the initial 50 rows prevented operators from auditing older historical orders or filtering by specific dates and execution outcomes.
+  2. Large result queries without pagination degrade database throughput and browser memory.
+  3. Server-side SQL parameterization (`WHERE` + `LIMIT 25 OFFSET $offset`) ensures sub-millisecond execution times on PostgreSQL `tracked_orders` regardless of database growth.
+- **Fix Applied**:
+  1. **Node.js BFF Server (`web-app/server/index.ts`)**:
+     - Parameterized `GET /api/v1/orders` with `symbol`, `side`, `status`, `strategy`, `provider`, `dateRange` (`today`, `24h`, `7d`, `30d`, `all`), `page`, and `limit` (fixed at 25).
+     - Executed concurrent SQL `COUNT(*)` to return accurate total records and total page counts.
+     - Sliced records cleanly with `ORDER BY created_at DESC LIMIT $limit OFFSET $offset`.
+     - Attached response headers: `X-Total-Count`, `X-Page`, `X-Total-Pages`, `X-Data-Source: PostgreSQL-Read-Direct`.
+  2. **TypeScript Types (`web-app/src/types/trading.ts`)**:
+     - Added `PaginationInfo` and `PaginatedOrdersResponse` models.
+  3. **Frontend UI (`OrderBook.tsx`)**:
+     - Built responsive dark-theme Filter Bar above the table:
+       - Date Range: `All Time`, `Today`, `Last 24 Hours`, `Last 7 Days`, `Last 30 Days`.
+       - Status: `All Statuses`, `Completed (Success)`, `Failed / Rejected`, `Pending`.
+       - Symbol: `All Symbols`, `AAPL`, `MSFT`.
+       - Side: `All Sides`, `BUY`, `SELL`.
+       - Strategy: `All Strategies`, `SmaCrossover`, `MeanReversion`.
+       - Reset Filters button (reverts all active dropdowns to default and resets page to 1).
+     - Fixed page size at 25 orders per page (no page selector dropdown per instruction).
+     - Built bottom Pagination Bar showing `Showing X-Y of Z orders`, `[< Previous]` button, `Page X of Y` indicator, and `[Next >]` button.
+     - Preserved clean collapsed table view (no Order ID column) with interactive chevron drawer revealing the full un-truncated Order ID with 1-click Copy button.
+  4. **Verification**:
+     - Built bundle `dist/assets/index-Jj0t4qx9.js`.
+     - Deployed via `deploy_compose_stack` and restarted `web-app` container.
+     - Tested API endpoints:
+       - `GET /api/v1/orders?page=1&limit=25` $\rightarrow$ `total: 172`, `totalPages: 7`, response time `3ms`.
+       - `GET /api/v1/orders?symbol=AAPL&dateRange=7d&page=1&limit=25` $\rightarrow$ `total: 56`, `totalPages: 3`.
+       - `GET /api/v1/orders?status=FAILED&page=1&limit=25` $\rightarrow$ `total: 0`, `totalPages: 1`.
 
 
