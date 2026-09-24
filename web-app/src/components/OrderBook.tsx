@@ -28,7 +28,7 @@ interface OrderBookProps {
 
 export const OrderBook: React.FC<OrderBookProps> = ({ orders: initialOrders, provider = "alpaca" }) => {
   // Filter States
-  const [dateRange, setDateRange] = useState<string>("all");
+  const [dateRange, setDateRange] = useState<string>("24h");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [symbolFilter, setSymbolFilter] = useState<string>("ALL");
   const [sideFilter, setSideFilter] = useState<string>("ALL");
@@ -99,7 +99,7 @@ export const OrderBook: React.FC<OrderBookProps> = ({ orders: initialOrders, pro
   };
 
   const resetFilters = () => {
-    setDateRange("all");
+    setDateRange("24h");
     setStatusFilter("ALL");
     setSymbolFilter("ALL");
     setSideFilter("ALL");
@@ -108,7 +108,7 @@ export const OrderBook: React.FC<OrderBookProps> = ({ orders: initialOrders, pro
   };
 
   const hasActiveFilters =
-    dateRange !== "all" ||
+    dateRange !== "24h" ||
     statusFilter !== "ALL" ||
     symbolFilter !== "ALL" ||
     sideFilter !== "ALL" ||

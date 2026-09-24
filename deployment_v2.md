@@ -502,3 +502,40 @@
        - `GET /api/v1/orders?status=FAILED&page=1&limit=25` $\rightarrow$ `total: 0`, `totalPages: 1`.
 
 
+
+
+### Deployment Action 15: Expandable Chart View, 24H Order Audit Default & Notification Center UI (2026-09-24)
+- **Objective**:
+  1. Make TradingView candlestick chart expandable with interactive Maximize/Minimize toggle button; relocate risk posture sidebar cards underneath the graph in a 3-column horizontal grid when expanded.
+  2. Set Order Audit Trail default date range filter to `24h` (Last 24 Hours) instead of `all` (All Time).
+  3. Build dedicated Notification Center UI in the Web App (`/api/v1/notify/*`) allowing multi-channel credential management (Telegram, ntfy.sh, Evolution WhatsApp API), event filter checkboxes, and 1-click test alert dispatcher.
+- **Root Cause & Architectural Decision**:
+  1. *Graph Real Estate*: Traders need deep technical chart inspection on demand without leaving the dashboard or losing visibility into pre-trade risk controls. Relocating `InformativeRiskCards` horizontally beneath the enlarged 580px chart retains situational awareness while expanding analysis canvas.
+  2. *Audit Trail Default*: Defaulting to All Time loads stale historical records on initial page view; changing the initial state to `24h` focuses immediately on the active trading session.
+  3. *Notification Management*: `notification-service` (`:8085`) was running as an isolated microservice with Redis override support, but only configurable via Streamlit `quant-dashboard`. Adding proxy routes in the Fastify BFF (`web-app:3030`) adheres strictly to Rule 6 (Frontend Proxy Isolation) while equipping operators with complete web-native notification management.
+- **Fix Applied**:
+  1. **Chart Section & Layout (`ChartSection.tsx` & `InformativeRiskCards.tsx` & `App.tsx`)**:
+     - Added `isExpanded` and `onToggleExpand` props to `ChartSection`.
+     - Injected `Maximize2` and `Minimize2` toggle button into the chart header toolbar.
+     - Implemented dynamic canvas resize effect responding to `isExpanded` state (`580px` expanded vs `420px` standard split).
+     - Added `isHorizontal` prop to `InformativeRiskCards` rendering cards in `grid grid-cols-1 md:grid-cols-3 gap-4` directly below the expanded chart.
+  2. **Order Audit Trail (`OrderBook.tsx`)**:
+     - Updated initial `dateRange` state to `"24h"`.
+     - Updated `resetFilters()` and `hasActiveFilters` predicate to maintain `24h` as baseline.
+  3. **BFF Notification Proxy Routes (`web-app/server/index.ts`)**:
+     - `GET /api/v1/notify/status`: Proxies live channel status and event routing filters from `http://notification-service:8085/api/v1/notify/status`.
+     - `POST /api/v1/notify/test`: Forwards test alert payloads directly to `http://notification-service:8085/api/v1/notify/test`.
+     - `POST /api/v1/notify/config`: Persists channel settings and routing filters directly into Redis (`notify:config:*`), enabling dynamic overrides without container restarts.
+  4. **Notification Center Component (`NotificationCenter.tsx`)**:
+     - Channel Cards:
+       - **Telegram**: Bot Token (masked with show/hide toggle), Chat ID, Topic ID, active toggle switch.
+       - **ntfy.sh**: Server URL, Topic Name, Access Token, active toggle switch.
+       - **Evolution API (WhatsApp)**: Server URL, Instance Name, Recipient Number, API Key (masked), active toggle switch.
+     - Event Filter Toggles: Risk Rejections, Order Fills, Kill Switch / Circuit Breakers, Order Placement Requests.
+     - Live Alert Dispatch Console: Interactive form allowing instant testing of rejection or fill alerts across all or targeted channels with live execution response payload feedback.
+  5. **Verification**:
+     - Successfully synchronized all modified files via `sync_project_files`.
+     - Rebuilt container stack with Vite production build (`dist/index.html`, `dist/assets/index-Dn8MSm1h.js`) and TypeScript server build (`dist-server/index.js`).
+     - Verified `GET /api/v1/notify/status` returns HTTP 200 with live channel status.
+     - Verified `GET /api/v1/orders?dateRange=24h` returns 23 active orders for the 24-hour window.
+     - Verified clean container logs on `web-app` (`http://0.0.0.0:3030`).

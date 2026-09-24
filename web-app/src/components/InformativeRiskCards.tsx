@@ -5,9 +5,14 @@ import { RiskStatus } from "../types/trading";
 interface InformativeRiskCardsProps {
   riskStatus: RiskStatus | null;
   provider: string;
+  isHorizontal?: boolean;
 }
 
-export const InformativeRiskCards: React.FC<InformativeRiskCardsProps> = ({ riskStatus, provider }) => {
+export const InformativeRiskCards: React.FC<InformativeRiskCardsProps> = ({
+  riskStatus,
+  provider,
+  isHorizontal = false,
+}) => {
   const maxLoss = riskStatus?.max_daily_loss || 2000;
   const currentDrawdown = riskStatus?.current_drawdown || 0;
   const drawdownPct = Math.min(100, Math.max(0, (currentDrawdown / maxLoss) * 100));
@@ -16,7 +21,7 @@ export const InformativeRiskCards: React.FC<InformativeRiskCardsProps> = ({ risk
   const isTripped = riskStatus?.circuit_breaker_tripped ?? false;
 
   return (
-    <div className="space-y-4">
+    <div className={isHorizontal ? "grid grid-cols-1 md:grid-cols-3 gap-4" : "space-y-4"}>
       {/* 1. Daily Loss Threshold & Circuit Breaker */}
       <div className="bg-[#151922] border border-[#232936] rounded-xl p-4 space-y-3">
         <div className="flex items-center justify-between">

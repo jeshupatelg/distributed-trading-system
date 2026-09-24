@@ -417,6 +417,77 @@ async function main() {
     });
   });
 
+  // 6. Notification Service Management Proxy
+  server.get("/api/v1/notify/status", async (_req, reply) => {
+    try {
+      const res = await fetch(`${NOTIFICATION_URL}/api/v1/notify/status`, {
+        signal: AbortSignal.timeout(3000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return reply.send(data);
+      }
+      return reply.status(res.status).send({ error: "Failed to fetch notification status from microservice" });
+    } catch (err: any) {
+      server.log.warn(`[BFF] Notification status proxy error: ${err.message}`);
+      return reply.status(503).send({ error: "Notification service unreachable", details: err.message });
+    }
+  });
+
+  server.post("/api/v1/notify/test", async (req, reply) => {
+    try {
+      const res = await fetch(`${NOTIFICATION_URL}/api/v1/notify/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(req.body || {}),
+        signal: AbortSignal.timeout(10000),
+      });
+      const data = await res.json();
+      return reply.status(res.status).send(data);
+    } catch (err: any) {
+      server.log.warn(`[BFF] Notification test proxy error: ${err.message}`);
+      return reply.status(503).send({ error: "Notification service unreachable", details: err.message });
+    }
+  });
+
+  server.post("/api/v1/notify/config", async (req, reply) => {
+    if (!redis) {
+      return reply.status(503).send({ error: "Redis not connected for config persistence" });
+    }
+    try {
+      const body = req.body as any;
+      if (body.telegram) {
+        if (body.telegram.token !== undefined) await redis.set("notify:config:telegram:token", body.telegram.token);
+        if (body.telegram.chat_id !== undefined) await redis.set("notify:config:telegram:chat_id", body.telegram.chat_id);
+        if (body.telegram.topic_id !== undefined) await redis.set("notify:config:telegram:topic_id", body.telegram.topic_id);
+        if (body.telegram.enabled !== undefined) await redis.set("notify:config:telegram:enabled", String(body.telegram.enabled));
+      }
+      if (body.ntfy) {
+        if (body.ntfy.url !== undefined) await redis.set("notify:config:ntfy:url", body.ntfy.url);
+        if (body.ntfy.topic !== undefined) await redis.set("notify:config:ntfy:topic", body.ntfy.topic);
+        if (body.ntfy.token !== undefined) await redis.set("notify:config:ntfy:token", body.ntfy.token);
+        if (body.ntfy.enabled !== undefined) await redis.set("notify:config:ntfy:enabled", String(body.ntfy.enabled));
+      }
+      if (body.evolution) {
+        if (body.evolution.url !== undefined) await redis.set("notify:config:evolution:url", body.evolution.url);
+        if (body.evolution.apikey !== undefined) await redis.set("notify:config:evolution:apikey", body.evolution.apikey);
+        if (body.evolution.instance !== undefined) await redis.set("notify:config:evolution:instance", body.evolution.instance);
+        if (body.evolution.recipient !== undefined) await redis.set("notify:config:evolution:recipient", body.evolution.recipient);
+        if (body.evolution.enabled !== undefined) await redis.set("notify:config:evolution:enabled", String(body.evolution.enabled));
+      }
+      if (body.filters) {
+        if (body.filters.notify_on_reject !== undefined) await redis.set("notify:config:filter:reject", String(body.filters.notify_on_reject));
+        if (body.filters.notify_on_order_create !== undefined) await redis.set("notify:config:filter:order_create", String(body.filters.notify_on_order_create));
+        if (body.filters.notify_on_order_fill !== undefined) await redis.set("notify:config:filter:order_fill", String(body.filters.notify_on_order_fill));
+        if (body.filters.notify_on_kill_switch !== undefined) await redis.set("notify:config:filter:kill_switch", String(body.filters.notify_on_kill_switch));
+      }
+      return reply.send({ success: true, message: "Configuration persisted to Redis" });
+    } catch (err: any) {
+      server.log.warn(`[BFF] Notification config save error: ${err.message}`);
+      return reply.status(500).send({ error: "Failed to persist configuration to Redis", details: err.message });
+    }
+  });
+
   // --- WebSocket Streaming Route ---
   server.get("/ws", { websocket: true }, (connection: any) => {
     server.log.info("Client connected to trading stream WebSocket");

@@ -1,13 +1,19 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createChart, IChartApi, ISeriesApi } from "lightweight-charts";
 import { MarketTick } from "../types/trading";
-import { TrendingUp, BarChart2 } from "lucide-react";
+import { TrendingUp, BarChart2, Maximize2, Minimize2 } from "lucide-react";
 
 interface ChartSectionProps {
   ticks: Record<string, MarketTick>;
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
 }
 
-export const ChartSection: React.FC<ChartSectionProps> = ({ ticks }) => {
+export const ChartSection: React.FC<ChartSectionProps> = ({
+  ticks,
+  isExpanded = false,
+  onToggleExpand,
+}) => {
   const [selectedSymbol, setSelectedSymbol] = useState<string>("AAPL");
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -54,7 +60,7 @@ export const ChartSection: React.FC<ChartSectionProps> = ({ ticks }) => {
     // Initialize chart
     const chart = createChart(chartContainerRef.current, {
       width: chartContainerRef.current.clientWidth,
-      height: 420,
+      height: isExpanded ? 580 : 420,
       layout: {
         background: { color: "#151922" },
         textColor: "#848E9C",
@@ -119,6 +125,21 @@ export const ChartSection: React.FC<ChartSectionProps> = ({ ticks }) => {
       chart.remove();
     };
   }, [selectedSymbol]);
+
+  // Handle dynamic resize when expanding/collapsing container
+  useEffect(() => {
+    if (chartRef.current && chartContainerRef.current) {
+      const timer = setTimeout(() => {
+        if (chartRef.current && chartContainerRef.current) {
+          chartRef.current.applyOptions({
+            width: chartContainerRef.current.clientWidth,
+            height: isExpanded ? 580 : 420,
+          });
+        }
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [isExpanded]);
 
   // Update chart when real-time tick arrives
   useEffect(() => {
@@ -190,21 +211,48 @@ export const ChartSection: React.FC<ChartSectionProps> = ({ ticks }) => {
           </div>
         </div>
 
-        {/* Symbol Selector Chips */}
-        <div className="flex items-center space-x-2 bg-[#0B0E14] p-1 rounded-lg border border-[#232936]">
-          {["AAPL", "MSFT"].map((sym) => (
+        <div className="flex items-center space-x-3">
+          {/* Symbol Selector Chips */}
+          <div className="flex items-center space-x-2 bg-[#0B0E14] p-1 rounded-lg border border-[#232936]">
+            {["AAPL", "MSFT"].map((sym) => (
+              <button
+                key={sym}
+                onClick={() => setSelectedSymbol(sym)}
+                className={`px-3 py-1 text-xs font-mono font-semibold rounded transition ${
+                  selectedSymbol === sym
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "text-gray-400 hover:text-white"
+                }`}
+              >
+                {sym}
+              </button>
+            ))}
+          </div>
+
+          {/* Expand/Collapse Toggle Button */}
+          {onToggleExpand && (
             <button
-              key={sym}
-              onClick={() => setSelectedSymbol(sym)}
-              className={`px-3 py-1 text-xs font-mono font-semibold rounded transition ${
-                selectedSymbol === sym
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-gray-400 hover:text-white"
+              onClick={onToggleExpand}
+              title={isExpanded ? "Collapse to standard split view" : "Expand to full width view"}
+              className={`p-1.5 rounded-lg border text-xs font-mono flex items-center gap-1.5 transition ${
+                isExpanded
+                  ? "bg-blue-600/20 text-blue-400 border-blue-500/40 hover:bg-blue-600/30"
+                  : "bg-[#0B0E14] text-gray-400 border-[#232936] hover:text-white hover:border-gray-600"
               }`}
             >
-              {sym}
+              {isExpanded ? (
+                <>
+                  <Minimize2 className="w-4 h-4" />
+                  <span className="hidden sm:inline">Minimize</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="w-4 h-4" />
+                  <span className="hidden sm:inline">Expand</span>
+                </>
+              )}
             </button>
-          ))}
+          )}
         </div>
       </div>
 

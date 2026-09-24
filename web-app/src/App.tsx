@@ -6,13 +6,15 @@ import { ChartSection } from "./components/ChartSection";
 import { OrderBook } from "./components/OrderBook";
 import { RecentOrders } from "./components/RecentOrders";
 import { TelemetryMatrix } from "./components/TelemetryMatrix";
+import { NotificationCenter } from "./components/NotificationCenter";
 import { useTradingStream } from "./hooks/useTradingStream";
 import { RiskStatus, Order } from "./types/trading";
-import { LayoutDashboard, Shield, Layers, Server } from "lucide-react";
+import { LayoutDashboard, Shield, Layers, Server, Bell } from "lucide-react";
 
 export default function App() {
   const [selectedProvider, setSelectedProvider] = useState<string>("alpaca");
   const [activeTab, setActiveTab] = useState<string>("cockpit");
+  const [isChartExpanded, setIsChartExpanded] = useState<boolean>(false);
   const { isConnected, ticks, recentOrders, riskStatus, setRiskStatus } = useTradingStream();
   const [orders, setOrders] = useState<Order[]>([]);
 
@@ -100,6 +102,18 @@ export default function App() {
         </button>
 
         <button
+          onClick={() => setActiveTab("notifications")}
+          className={`py-3 flex items-center gap-2 border-b-2 transition ${
+            activeTab === "notifications"
+              ? "border-blue-500 text-blue-400"
+              : "border-transparent text-gray-400 hover:text-gray-200"
+          }`}
+        >
+          <Bell className="w-4 h-4" />
+          <span>Notification Center</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab("telemetry")}
           className={`py-3 flex items-center gap-2 border-b-2 transition ${
             activeTab === "telemetry"
@@ -116,15 +130,37 @@ export default function App() {
       <main className="flex-1 p-4 lg:p-6 max-w-[1720px] w-full mx-auto space-y-6">
         {activeTab === "cockpit" && (
           <div className="space-y-6">
-            {/* Top Grid: Live Chart on Left (8-cols), Informative Cards on Right (4-cols) */}
-            <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
-              <div className="xl:col-span-8">
-                <ChartSection ticks={ticks} />
+            {isChartExpanded ? (
+              <div className="space-y-6">
+                <ChartSection
+                  ticks={ticks}
+                  isExpanded={true}
+                  onToggleExpand={() => setIsChartExpanded(false)}
+                />
+                <InformativeRiskCards
+                  riskStatus={riskStatus}
+                  provider={selectedProvider}
+                  isHorizontal={true}
+                />
               </div>
-              <div className="xl:col-span-4">
-                <InformativeRiskCards riskStatus={riskStatus} provider={selectedProvider} />
+            ) : (
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+                <div className="xl:col-span-8">
+                  <ChartSection
+                    ticks={ticks}
+                    isExpanded={false}
+                    onToggleExpand={() => setIsChartExpanded(true)}
+                  />
+                </div>
+                <div className="xl:col-span-4">
+                  <InformativeRiskCards
+                    riskStatus={riskStatus}
+                    provider={selectedProvider}
+                    isHorizontal={false}
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Bottom Dock: Recent Orders (Latest 5) */}
             <RecentOrders orders={allOrders} onViewAll={() => setActiveTab("orders")} />
@@ -140,6 +176,12 @@ export default function App() {
         {activeTab === "orders" && (
           <div className="space-y-6">
             <OrderBook provider={selectedProvider} />
+          </div>
+        )}
+
+        {activeTab === "notifications" && (
+          <div className="space-y-6">
+            <NotificationCenter />
           </div>
         )}
 
