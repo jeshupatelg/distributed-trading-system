@@ -539,3 +539,17 @@
      - Verified `GET /api/v1/notify/status` returns HTTP 200 with live channel status.
      - Verified `GET /api/v1/orders?dateRange=24h` returns 23 active orders for the 24-hour window.
      - Verified clean container logs on `web-app` (`http://0.0.0.0:3030`).
+
+
+### Deployment Action 16: Footer Technical Metadata Cleanup (2026-09-24)
+- **Objective**: Remove technical debug/architecture metadata labels (`Port 3030 Isolated`, `BFF: Fastify + Node.js`, `UI: React 18 + Vite`) from the web cockpit footer per user instruction.
+- **Root Cause & Architectural Decision**:
+  - The XPath targets `/html/body/div/div/footer/div[2]/span[1]`, `/html/body/div/div/footer/div[2]/span[2]`, and `/html/body/div/div/footer/div[2]/span[3]` corresponded to internal tech-stack badges.
+  - Removing these simplifies the client-facing UI and provides a cleaner footer presentation while preserving ADR 0003 system documentation text.
+- **Fix Applied**:
+  - In `web-app/src/App.tsx`, removed the secondary `<div className="flex items-center space-x-4">` block containing the three `<span>` metadata chips from `<footer>`.
+  - Synchronized `web-app/src/App.tsx` to remote host via `sync_project_files`.
+  - Rebuilt production bundle (`/assets/index-C1TsVRWT.js`) and redeployed `web-app` container via `deploy_compose_stack` and `restart_docker_container`.
+- **Verification**:
+  - Confirmed `/assets/index-C1TsVRWT.js` served by Fastify BFF does not contain the removed string tokens.
+  - Verified container healthy on `http://192.168.29.96:3030`.

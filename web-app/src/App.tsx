@@ -195,11 +195,6 @@ export default function App() {
       {/* 4. Footer */}
       <footer className="bg-[#151922] border-t border-[#232936] px-6 py-3 text-xs text-gray-500 flex flex-wrap items-center justify-between gap-4 font-mono">
         <div>Distributed Trading System — Frontend Gateway BFF Architecture (ADR 0003)</div>
-        <div className="flex items-center space-x-4">
-          <span>Port 3030 Isolated</span>
-          <span>BFF: Fastify + Node.js</span>
-          <span>UI: React 18 + Vite</span>
-        </div>
       </footer>
     </div>
   );
