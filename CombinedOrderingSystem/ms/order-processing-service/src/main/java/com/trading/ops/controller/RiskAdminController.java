@@ -1,6 +1,7 @@
 package com.trading.ops.controller;
 
 import com.trading.shared.config.ProviderConfig;
+import com.trading.shared.state.ProviderStateManager;
 import com.trading.ops.service.OrderExecutionClient;
 import com.trading.ops.service.RiskManager;
 import org.slf4j.Logger;
@@ -19,20 +20,21 @@ public class RiskAdminController {
 
     private final RiskManager riskManager;
     private final OrderExecutionClient executionClient;
-    private final List<ProviderConfig> providerBeans;
+    private final ProviderStateManager providerStateManager;
 
-    public RiskAdminController(RiskManager riskManager, OrderExecutionClient executionClient, List<ProviderConfig> providerBeans) {
+    public RiskAdminController(RiskManager riskManager, OrderExecutionClient executionClient, ProviderStateManager providerStateManager) {
         this.riskManager = riskManager;
         this.executionClient = executionClient;
-        this.providerBeans = providerBeans;
+        this.providerStateManager = providerStateManager;
     }
 
     private String resolveTargetProvider(String provider) {
         if (provider != null && !provider.isBlank()) {
             return provider.toLowerCase().trim();
         }
-        if (providerBeans != null && !providerBeans.isEmpty()) {
-            return providerBeans.getFirst().getName();
+        List<ProviderConfig> configs = providerStateManager.getProviderConfigs();
+        if (configs != null && !configs.isEmpty()) {
+            return configs.getFirst().getName();
         }
         throw new IllegalArgumentException("No broker providers configured");
     }
@@ -98,8 +100,9 @@ public class RiskAdminController {
         } else {
             // Global Trigger across ALL registered provider beans
             riskManager.triggerKillSwitch();
-            if (providerBeans != null) {
-                for (ProviderConfig p : providerBeans) {
+            List<ProviderConfig> configs = providerStateManager.getProviderConfigs();
+            if (configs != null) {
+                for (ProviderConfig p : configs) {
                     String provName = p.getName();
                     log.warn("Looping emergency kill switch action for provider bean: '{}'", provName);
                     try {

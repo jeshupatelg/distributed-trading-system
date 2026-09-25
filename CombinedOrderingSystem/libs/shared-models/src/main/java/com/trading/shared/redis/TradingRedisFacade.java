@@ -13,14 +13,17 @@ import java.util.Set;
  * Provides typed accessors, automated fail-fast validation for strict keys,
  * centralized Redis-backed defaulting, and authorized ADR market price resolution.
  */
-public record TradingRedisFacade(StringRedisTemplate redisTemplate) {
+public class TradingRedisFacade {
 
     private static final Logger log = LoggerFactory.getLogger(TradingRedisFacade.class);
 
-    public TradingRedisFacade {
+    private final StringRedisTemplate redisTemplate;
+
+    public TradingRedisFacade(StringRedisTemplate redisTemplate) {
         if (redisTemplate == null) {
             throw new IllegalArgumentException("StringRedisTemplate must not be null");
         }
+        this.redisTemplate = redisTemplate;
     }
 
     // =========================================================================
@@ -227,6 +230,19 @@ public record TradingRedisFacade(StringRedisTemplate redisTemplate) {
 
     public boolean delete(String resolvedKey) {
         return Boolean.TRUE.equals(redisTemplate.delete(resolvedKey));
+    }
+
+    // =========================================================================
+    // Key-Value Primitives for Domain Managers
+    // =========================================================================
+
+    public Set<String> keys(String pattern) {
+        Set<String> keys = redisTemplate.keys(pattern);
+        return keys != null ? keys : Collections.emptySet();
+    }
+
+    public String getString(String key) {
+        return redisTemplate.opsForValue().get(key);
     }
 
     // =========================================================================

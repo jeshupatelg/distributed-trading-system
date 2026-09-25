@@ -8,6 +8,7 @@ import com.trading.shared.config.ProviderConfig;
 import com.trading.shared.redis.RedisKeyBuilder;
 import com.trading.shared.redis.RedisKeyDef;
 import com.trading.shared.redis.TradingRedisFacade;
+import com.trading.shared.state.PositionStateManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,6 +24,7 @@ public class OrderResolutionService {
 
     private final TrackedOrderRepository orderRepository;
     private final TradingRedisFacade redisFacade;
+    private final PositionStateManager positionStateManager;
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper objectMapper;
     private final List<ProviderConfig> providerBeans;
@@ -32,11 +34,13 @@ public class OrderResolutionService {
 
     public OrderResolutionService(TrackedOrderRepository orderRepository, 
                                   TradingRedisFacade redisFacade,
+                                  PositionStateManager positionStateManager,
                                   KafkaTemplate<String, String> kafkaTemplate, 
                                   ObjectMapper objectMapper,
                                   List<ProviderConfig> providerBeans) {
         this.orderRepository = orderRepository;
         this.redisFacade = redisFacade;
+        this.positionStateManager = positionStateManager;
         this.kafkaTemplate = kafkaTemplate;
         this.objectMapper = objectMapper;
         this.providerBeans = providerBeans;
@@ -118,11 +122,8 @@ public class OrderResolutionService {
                 redisFacade.increment(cashKey, executionCost);
             }
 
-            // Settle positions per provider (defaults to 0 if sparse key absent)
-            int currentPos = redisFacade.getInteger(RedisKeyDef.POSITIONS, provider, order.getSymbol());
-            int newPos = "BUY".equals(side) ? currentPos + filledQty : currentPos - filledQty;
-
-            redisFacade.setInteger(RedisKeyDef.POSITIONS, provider, order.getSymbol(), newPos);
+            // Settle positions per provider via PositionStateManager
+            int newPos = positionStateManager.settlePosition(provider, order.getSymbol(), side, filledQty);
 
             log.info("Settled Redis cache for order {} (provider {}). Mutated cash by ${}, set position for {} to {}", 
                 order.getOrderId(), provider, ("BUY".equals(side) ? "-" : "+") + executionCost, order.getSymbol(), newPos);

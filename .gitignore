@@ -27,3 +27,7 @@ redis-config.md
 redis_dump.csv
 redis*dump*.csv
 redis*comparison*.csv
+
+# Dump backups
+system-cleanup-boot/dumps/*
+!system-cleanup-boot/dumps/.gitkeep

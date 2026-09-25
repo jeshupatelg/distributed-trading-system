@@ -43,6 +43,28 @@ public class RedisKeyBuilder {
         return of(keyDef).symbol(symbol).build();
     }
 
+    public static String prefix(RedisKeyDef keyDef, String provider) {
+        if (keyDef == null) {
+            throw new IllegalArgumentException("RedisKeyDef must not be null");
+        }
+        if (provider == null || provider.isBlank()) {
+            throw new IllegalArgumentException("Provider must not be null or blank");
+        }
+        String prov = provider.toLowerCase().trim();
+        if (keyDef.getScope() == KeyScope.PROVIDER_AND_SYMBOL) {
+            String format = keyDef.getFormat();
+            int secondPlaceholder = format.lastIndexOf(":%s");
+            if (secondPlaceholder != -1) {
+                return String.format(format.substring(0, secondPlaceholder + 1), prov);
+            }
+        }
+        return of(keyDef).provider(prov).build() + ":";
+    }
+
+    public static String pattern(RedisKeyDef keyDef, String provider) {
+        return prefix(keyDef, provider) + "*";
+    }
+
     // --- Fluent setters ---
 
     public RedisKeyBuilder provider(String provider) {

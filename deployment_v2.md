@@ -553,3 +553,29 @@
 - **Verification**:
   - Confirmed `/assets/index-C1TsVRWT.js` served by Fastify BFF does not contain the removed string tokens.
   - Verified container healthy on `http://192.168.29.96:3030`.
+
+
+### Deployment Action 17: State Managers Consolidation, Circular Dependency Elimination & Consumer Group Configuration (2026-09-25)
+- **Objective**: 
+  1. Eliminate duplicated open positions valuation logic across OPS and OMS and encapsulate Redis position keys via a dedicated `PositionStateManager`.
+  2. Revert `TradingRedisFacade` to an encapsulated class with a strictly private `StringRedisTemplate`.
+  3. Consolidate provider lifecycle management into `ProviderStateManager`, unifying in-memory `ProviderConfig` state and Redis `provider:status:*` status transitions with completeness checks.
+  4. Eliminate the `@Lazy` circular dependency between `RiskManager` and `OrderExecutionClient`.
+  5. Make `SignalConsumer.consumeSignal` Kafka consumer group configurable via Docker Compose (`KAFKA_CONSUMER_GROUP_SIGNALS`).
+  6. Introduce Phase 5 `system-cleanup-boot` purge suite for Kafka, Redis, and Postgres.
+- **Root Cause & Architectural Decision**:
+  - `RiskManager` and `EquityReconciliationService` both implemented duplicate `calculateOpenPositionsValue` logic using raw Redis key patterns and accessed `redisTemplate` directly, violating encapsulation. Extracting `PositionStateManager` as a Spring-managed bean in `shared-models` centralizes open position value calculation and position key matching cleanly through `TradingRedisFacade`.
+  - `RiskManager` and `OrderExecutionClient` formed a circular dependency requiring Spring `@Lazy` because `RiskManager` probed provider gRPC health on startup and `OrderExecutionClient` marked providers inactive on `UNAVAILABLE` gRPC failures. Proactive startup health probing was moved to `OrderExecutionClient.@PostConstruct`, network health reporting was delegated to `ProviderStateManager`, and `RiskManager` became a pure pre-trade risk engine with zero network/client dependencies.
+  - Consolidating provider lifecycle methods (`findProviderConfig`, `isProviderActive`, `markProviderActive`, `markProviderInactive`, `ensureAccountCache`) directly into `ProviderStateManager` prevents state drift between in-memory configuration and Redis while avoiding extra indirection layers.
+  - `SignalConsumer.consumeSignal` had a hardcoded `groupId = "ops-group"`; making it resolve `${spring.kafka.consumer.group-id}` backed by `${KAFKA_CONSUMER_GROUP_SIGNALS:ops-group}` allows dynamic consumer group scaling in Docker Compose.
+- **Fix Applied**:
+  - Created `PositionStateManager` and `PositionStateManagerTest` in `shared-models` (`com.trading.shared.state`).
+  - Refactored `TradingRedisFacade` from a record to an encapsulated class with private `StringRedisTemplate`.
+  - Consolidated provider lifecycle methods directly into `ProviderStateManager` and updated `ProviderStateManagerTest` (12 tests passing).
+  - Refactored `OrderExecutionClient` and `RiskManager` to drop mutual dependencies and removed all `@Lazy` annotations.
+  - Updated `SignalConsumer`, `application.yml`, and `docker-compose.yml` to support `KAFKA_CONSUMER_GROUP_SIGNALS`.
+  - Added Phase 5 `system-cleanup-boot` suite with modular purge scripts.
+- **Verification**:
+  - Full reactor build `mvn clean test` passed across all 4 modules (`CombinedOrderingSystem`, `shared-models`, `order-processing-service`, `order-management-service`) with 41 unit tests passing (0 failures, 0 errors).
+  - Confirmed 0 occurrences of `@Lazy` remain across the entire codebase.
+

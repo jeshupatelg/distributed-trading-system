@@ -2,7 +2,6 @@ package com.trading.oms.job;
 
 import com.trading.oms.service.ReconciliationClient;
 import com.trading.shared.config.ProviderConfig;
-import com.trading.shared.redis.RedisKeyDef;
 import com.trading.shared.state.ProviderStateManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,14 +14,11 @@ import java.util.List;
 public class ProviderHealthCheckJob {
     private static final Logger log = LoggerFactory.getLogger(ProviderHealthCheckJob.class);
 
-    private final List<ProviderConfig> providerBeans;
     private final ReconciliationClient reconciliationClient;
     private final ProviderStateManager providerStateManager;
 
-    public ProviderHealthCheckJob(List<ProviderConfig> providerBeans,
-                                  ReconciliationClient reconciliationClient,
+    public ProviderHealthCheckJob(ReconciliationClient reconciliationClient,
                                   ProviderStateManager providerStateManager) {
-        this.providerBeans = providerBeans;
         this.reconciliationClient = reconciliationClient;
         this.providerStateManager = providerStateManager;
     }
@@ -35,11 +31,12 @@ public class ProviderHealthCheckJob {
      */
     @Scheduled(fixedDelayString = "${trading.health-check.interval-ms:15000}")
     public void checkAndRecoverInactiveProviders() {
-        if (providerBeans == null || providerBeans.isEmpty()) {
+        List<ProviderConfig> configs = providerStateManager.getProviderConfigs();
+        if (configs == null || configs.isEmpty()) {
             return;
         }
 
-        for (ProviderConfig p : providerBeans) {
+        for (ProviderConfig p : configs) {
             if (p.getName() == null || p.getName().isBlank()) {
                 continue;
             }
@@ -49,7 +46,6 @@ public class ProviderHealthCheckJob {
             if (!p.isConfigComplete()) {
                 log.warn("Provider '{}' configuration is INCOMPLETE (endpoint='{}', timezone='{}', exchange='{}'). Skipping reconnection retry.",
                     prov, p.getEndpoint(), p.getTimezone(), p.getExchange());
-                p.setActive(false);
                 providerStateManager.markProviderInactive(prov);
                 continue;
             }
@@ -61,16 +57,11 @@ public class ProviderHealthCheckJob {
                 log.info("Provider '{}' is currently INACTIVE. Probing gRPC connection manager health...", prov);
                 boolean grpcHealthy = reconciliationClient.checkHealth(prov);
                 if (grpcHealthy) {
-                    List<RedisKeyDef> missingKeys = providerStateManager.getMissingRequiredProviderKeys(prov);
-                    if (missingKeys.isEmpty()) {
-                        p.setActive(true);
-                        providerStateManager.markProviderActive(prov);
+                    boolean activated = providerStateManager.markProviderActive(prov);
+                    if (activated) {
                         log.info("HEALTH RECOVERY: Provider '{}' connection manager is HEALTHY and Redis state is complete! Restored status to ACTIVE in Redis.", prov);
                     } else {
-                        p.setActive(false);
-                        providerStateManager.markProviderInactive(prov);
-                        log.warn("Provider '{}' connection manager is HEALTHY via gRPC, but Redis state is incomplete (missing non-defaultable keys: {}). Retaining INACTIVE status.",
-                            prov, missingKeys);
+                        log.warn("Provider '{}' connection manager is HEALTHY via gRPC, but Redis state is incomplete. Retaining INACTIVE status.", prov);
                         providerStateManager.reconcileProviderState(prov);
                     }
                 } else {

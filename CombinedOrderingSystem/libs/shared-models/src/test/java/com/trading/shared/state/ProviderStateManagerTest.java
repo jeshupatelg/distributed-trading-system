@@ -1,5 +1,6 @@
 package com.trading.shared.state;
 
+import com.trading.shared.config.ProviderConfig;
 import com.trading.shared.redis.RedisKeyDef;
 import com.trading.shared.redis.TradingRedisFacade;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -21,11 +23,21 @@ class ProviderStateManagerTest {
     @Mock
     private TradingRedisFacade redisFacade;
 
+    private ProviderConfig alpacaConfig;
+    private ProviderConfig binanceConfig;
     private ProviderStateManager stateManager;
 
     @BeforeEach
     void setUp() {
-        stateManager = new ProviderStateManager(redisFacade);
+        alpacaConfig = new ProviderConfig("alpaca", "localhost:50051", "America/New_York", "IEX");
+        alpacaConfig.setEnabled(true);
+        alpacaConfig.setActive(false);
+
+        binanceConfig = new ProviderConfig("binance", "localhost:50052"); // incomplete config: missing timezone/exchange
+        binanceConfig.setEnabled(true);
+        binanceConfig.setActive(false);
+
+        stateManager = new ProviderStateManager(redisFacade, List.of(alpacaConfig, binanceConfig));
     }
 
     @Test
@@ -68,13 +80,97 @@ class ProviderStateManagerTest {
     }
 
     @Test
-    @DisplayName("Should set active and inactive statuses in Redis")
+    @DisplayName("Should find provider config case-insensitively")
+    void testFindProviderConfig() {
+        assertNotNull(stateManager.findProviderConfig("alpaca"));
+        assertNotNull(stateManager.findProviderConfig("ALPACA"));
+        assertNotNull(stateManager.findProviderConfig("Alpaca"));
+        assertNull(stateManager.findProviderConfig("unknown"));
+        assertNull(stateManager.findProviderConfig(null));
+        assertNull(stateManager.findProviderConfig("  "));
+    }
+
+    @Test
+    @DisplayName("Should report provider active status correctly")
+    void testIsProviderActive() {
+        assertFalse(stateManager.isProviderActive("alpaca"));
+        alpacaConfig.setActive(true);
+        assertTrue(stateManager.isProviderActive("alpaca"));
+
+        // Binance is incomplete, should always be false even if active flag is toggled
+        binanceConfig.setActive(true);
+        assertFalse(stateManager.isProviderActive("binance"));
+        assertFalse(stateManager.isProviderActive("unknown"));
+    }
+
+    @Test
+    @DisplayName("Should mark provider active when config is complete and Redis state is fully initialized")
+    void testMarkProviderActive_Success() {
+        when(redisFacade.hasKey(anyString())).thenReturn(true);
+
+        boolean result = stateManager.markProviderActive("alpaca");
+
+        assertTrue(result);
+        assertTrue(alpacaConfig.isActive());
+        verify(redisFacade).setString(RedisKeyDef.PROVIDER_STATUS, "alpaca", "ACTIVE");
+    }
+
+    @Test
+    @DisplayName("Should refuse to mark provider active and mark inactive when config is incomplete")
+    void testMarkProviderActive_IncompleteConfig() {
+        boolean result = stateManager.markProviderActive("binance");
+
+        assertFalse(result);
+        assertFalse(binanceConfig.isActive());
+        verify(redisFacade).setString(RedisKeyDef.PROVIDER_STATUS, "binance", "INACTIVE");
+    }
+
+    @Test
+    @DisplayName("Should refuse to mark provider active when Redis keys are missing")
+    void testMarkProviderActive_MissingRedisKeys() {
+        when(redisFacade.hasKey(anyString())).thenReturn(true);
+        when(redisFacade.hasKey("balance:cash:alpaca")).thenReturn(false);
+
+        boolean result = stateManager.markProviderActive("alpaca");
+
+        assertFalse(result);
+        assertFalse(alpacaConfig.isActive());
+        verify(redisFacade).setString(RedisKeyDef.PROVIDER_STATUS, "alpaca", "INACTIVE");
+    }
+
+    @Test
+    @DisplayName("Should set active and inactive statuses in Redis and in-memory")
     void testStatusMutation() {
+        when(redisFacade.hasKey(anyString())).thenReturn(true);
+
         stateManager.markProviderActive("alpaca");
+        assertTrue(alpacaConfig.isActive());
         verify(redisFacade).setString(RedisKeyDef.PROVIDER_STATUS, "alpaca", "ACTIVE");
 
         stateManager.markProviderInactive("alpaca");
+        assertFalse(alpacaConfig.isActive());
         verify(redisFacade).setString(RedisKeyDef.PROVIDER_STATUS, "alpaca", "INACTIVE");
+    }
+
+    @Test
+    @DisplayName("Should validate account cache and mark inactive when keys are missing")
+    void testEnsureAccountCache() {
+        when(redisFacade.hasKey(anyString())).thenReturn(true);
+        when(redisFacade.hasKey("balance:starting_equity:alpaca")).thenReturn(false);
+
+        boolean valid = stateManager.ensureAccountCache("alpaca");
+
+        assertFalse(valid);
+        verify(redisFacade).setString(RedisKeyDef.PROVIDER_STATUS, "alpaca", "INACTIVE");
+    }
+
+    @Test
+    @DisplayName("Should format sanitized config string properly")
+    void testFormatSanitizedConfig() {
+        String formatted = stateManager.formatSanitizedConfig(alpacaConfig);
+        assertTrue(formatted.contains("name='alpaca'"));
+        assertTrue(formatted.contains("isComplete=true"));
+        assertEquals("null", stateManager.formatSanitizedConfig(null));
     }
 
     @Test

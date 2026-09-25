@@ -42,7 +42,7 @@ public class SignalConsumer {
         this.objectMapper = objectMapper;
     }
 
-    @KafkaListener(topics = "${trading.topics.signals}", groupId = "ops-group")
+    @KafkaListener(topics = "${trading.topics.signals}", groupId = "${spring.kafka.consumer.group-id}")
     public void consumeSignal(String message) {
         log.info("Received raw signal event from Kafka: {}", message);
         try {
@@ -80,7 +80,7 @@ public class SignalConsumer {
                 log.warn("ORDER REJECTED by Pre-Trade Risk Engine. Reason: {}, Gate: {}, Signal: {}", 
                     decision.reason(), decision.riskGateLevel(), signal);
                 try {
-                    OrderRejectEvent rejectEvent = new OrderRejectEvent(
+                    OrderRejectEvent rejectEvent = new OrderRejectEvent(//TODO: Should be saved
                         clientOrderId,
                         signal.symbol(),
                         signal.qty(),
@@ -119,7 +119,7 @@ public class SignalConsumer {
             try {
                 OrderResponse response = executionClient.placeOrder(provider, orderRequest);
                 String brokerOrderId = response.getOrderId();
-                if (brokerOrderId == null || brokerOrderId.isEmpty()) {
+                if (brokerOrderId.isEmpty()) {
                     brokerOrderId = clientOrderId;
                 }
 

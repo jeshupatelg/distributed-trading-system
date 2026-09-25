@@ -149,6 +149,7 @@ services:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - KAFKA_TOPIC_SIGNALS=trading-signals
       - KAFKA_TOPIC_ORDER_CREATE=order-create-events
+      - KAFKA_CONSUMER_GROUP_SIGNALS=ops-group
       - PROVIDER_ALPACA_ENDPOINT=connection-manager-alpaca:50051
     extra_hosts:
       - "host.docker.internal:host-gateway"

@@ -2,15 +2,14 @@ package com.trading.oms.service;
 
 import com.trading.connection.grpc.AccountDetailsResponse;
 import com.trading.shared.config.ProviderConfig;
-import com.trading.shared.redis.MissingRedisStateException;
 import com.trading.shared.redis.RedisKeyDef;
 import com.trading.shared.redis.TradingRedisFacade;
+import com.trading.shared.state.PositionStateManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
-import java.util.Set;
 
 @Service
 public class EquityReconciliationService {
@@ -18,10 +17,14 @@ public class EquityReconciliationService {
 
     private final ReconciliationClient reconciliationClient;
     private final TradingRedisFacade redisFacade;
+    private final PositionStateManager positionStateManager;
 
-    public EquityReconciliationService(ReconciliationClient reconciliationClient, TradingRedisFacade redisFacade) {
+    public EquityReconciliationService(ReconciliationClient reconciliationClient,
+                                       TradingRedisFacade redisFacade,
+                                       PositionStateManager positionStateManager) {
         this.reconciliationClient = reconciliationClient;
         this.redisFacade = redisFacade;
+        this.positionStateManager = positionStateManager;
     }
 
     /**
@@ -88,7 +91,7 @@ public class EquityReconciliationService {
 
     private void executeFallbackInternalReset(String prov, String exchange, LocalDate rolloverDate) {
         double currentCash = redisFacade.getDouble(RedisKeyDef.BALANCE_CASH, prov);
-        double positionsVal = calculateOpenPositionsValue(prov);
+        double positionsVal = positionStateManager.calculateOpenPositionsValue(prov);
         double closingEquity = currentCash + positionsVal;
 
         redisFacade.setDouble(RedisKeyDef.BALANCE_STARTING_EQUITY, prov, closingEquity);
@@ -96,30 +99,5 @@ public class EquityReconciliationService {
 
         log.info("FALLBACK DAILY EQUITY RESET COMPLETE for provider '{}' ({}): starting_equity set to {} for date {}",
             prov, exchange, closingEquity, rolloverDate);
-    }
-
-    private double calculateOpenPositionsValue(String provider) {
-        String prov = provider.toLowerCase().trim();
-        String posPrefix = "positions:" + prov + ":";
-        Set<String> keys = redisFacade.redisTemplate().keys(posPrefix + "*");
-        if (keys == null || keys.isEmpty()) {
-            return 0.0;
-        }
-        double totalVal = 0.0;
-        for (String k : keys) {
-            String posStr = redisFacade.redisTemplate().opsForValue().get(k);
-            if (posStr != null) {
-                int qty = Integer.parseInt(posStr.trim());
-                String symbol = k.substring(posPrefix.length()).toUpperCase();
-                try {
-                    double price = redisFacade.getMarketPrice(prov, symbol);
-                    totalVal += (qty * price);
-                } catch (MissingRedisStateException e) {
-                    log.warn("Missing market reference price for symbol '{}' during equity rollover fallback (provider '{}'): {}",
-                        symbol, prov, e.getMessage());
-                }
-            }
-        }
-        return totalVal;
     }
 }

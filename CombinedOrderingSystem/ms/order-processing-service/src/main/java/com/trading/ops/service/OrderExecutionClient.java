@@ -8,9 +8,11 @@ import com.trading.connection.grpc.OrderExecutionServiceGrpc;
 import com.trading.connection.grpc.OrderRequest;
 import com.trading.connection.grpc.OrderResponse;
 import com.trading.shared.config.ProviderConfig;
+import com.trading.shared.state.ProviderStateManager;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.StatusRuntimeException;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -23,13 +25,42 @@ import java.util.concurrent.TimeUnit;
 public class OrderExecutionClient {
     private static final Logger log = LoggerFactory.getLogger(OrderExecutionClient.class);
 
-    private final List<ProviderConfig> providerBeans;
-    private final RiskManager riskManager;
+    private final ProviderStateManager providerStateManager;
     private final ConcurrentHashMap<String, ManagedChannel> channels = new ConcurrentHashMap<>();
 
-    public OrderExecutionClient(List<ProviderConfig> providerBeans, @org.springframework.context.annotation.Lazy RiskManager riskManager) {
-        this.providerBeans = providerBeans;
-        this.riskManager = riskManager;
+    public OrderExecutionClient(ProviderStateManager providerStateManager) {
+        this.providerStateManager = providerStateManager;
+    }
+
+    @PostConstruct
+    public void initProviderHealth() {
+        List<ProviderConfig> configs = providerStateManager.getProviderConfigs();
+        if (configs != null && !configs.isEmpty()) {
+            for (ProviderConfig p : configs) {
+                if (p.getName() != null && !p.getName().isBlank()) {
+                    String prov = p.getName().toLowerCase().trim();
+                    if (!p.isConfigComplete()) {
+                        providerStateManager.markProviderInactive(prov);
+                        log.warn("Provider '{}' configuration is INCOMPLETE (missing endpoint, timezone, or exchange). Config: {}. Marking INACTIVE.",
+                                prov, providerStateManager.formatSanitizedConfig(p));
+                        continue;
+                    }
+                    log.info("Proactively probing provider connection manager health on startup: '{}'", prov);
+                    boolean healthy = checkProviderHealth(prov);
+                    if (healthy) {
+                        log.info("Provider '{}' connection manager is reachable. Performing Redis account cache init-check.", prov);
+                        boolean activated = providerStateManager.markProviderActive(prov);
+                        if (activated) {
+                            log.info("Provider '{}' connection manager & account cache are ACTIVE.", prov);
+                        }
+                    } else {
+                        providerStateManager.markProviderInactive(prov);
+                        log.warn("Provider '{}' connection manager is UNREACHABLE/UNHEALTHY. Config: {}. Status set to INACTIVE.",
+                                prov, providerStateManager.formatSanitizedConfig(p));
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -48,8 +79,8 @@ public class OrderExecutionClient {
             return stub.placeOrder(request);
         } catch (StatusRuntimeException e) {
             log.error("gRPC PlaceOrder failed for provider '{}' at endpoint '{}': {}", provider, endpoint, e.getStatus());
-            if (riskManager != null && e.getStatus().getCode() == io.grpc.Status.Code.UNAVAILABLE) {
-                riskManager.markProviderInactive(provider);
+            if (providerStateManager != null && e.getStatus().getCode() == io.grpc.Status.Code.UNAVAILABLE) {
+                providerStateManager.markProviderInactive(provider);
             }
             throw e;
         }
@@ -121,13 +152,9 @@ public class OrderExecutionClient {
         if (provider == null || provider.isBlank()) {
             throw new IllegalArgumentException("Provider string must not be null or blank");
         }
-        String prov = provider.toLowerCase().trim();
-        if (providerBeans != null) {
-            for (ProviderConfig config : providerBeans) {
-                if (prov.equals(config.getName())) {
-                    return config.getEndpoint();
-                }
-            }
+        ProviderConfig config = providerStateManager != null ? providerStateManager.findProviderConfig(provider) : null;
+        if (config != null && config.getEndpoint() != null && !config.getEndpoint().isBlank()) {
+            return config.getEndpoint();
         }
         throw new IllegalArgumentException("No gRPC endpoint configured for registered provider: " + provider);
     }

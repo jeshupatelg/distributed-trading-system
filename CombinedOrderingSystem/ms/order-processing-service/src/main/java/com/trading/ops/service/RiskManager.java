@@ -5,8 +5,8 @@ import com.trading.shared.redis.MissingRedisStateException;
 import com.trading.shared.redis.RedisKeyBuilder;
 import com.trading.shared.redis.RedisKeyDef;
 import com.trading.shared.redis.TradingRedisFacade;
+import com.trading.shared.state.PositionStateManager;
 import com.trading.shared.state.ProviderStateManager;
-import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -16,115 +16,43 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 @Service
 public class RiskManager {
     private static final Logger log = LoggerFactory.getLogger(RiskManager.class);
 
     private final TradingRedisFacade redisFacade;
+    private final PositionStateManager positionStateManager;
     private final ProviderStateManager providerStateManager;
-    private final List<ProviderConfig> providerBeans;
-    private final OrderExecutionClient orderExecutionClient;
 
     public RiskManager(TradingRedisFacade redisFacade,
-                       ProviderStateManager providerStateManager,
-                       List<ProviderConfig> providerBeans,
-                       @org.springframework.context.annotation.Lazy OrderExecutionClient orderExecutionClient) {
+                       PositionStateManager positionStateManager,
+                       ProviderStateManager providerStateManager) {
         this.redisFacade = redisFacade;
+        this.positionStateManager = positionStateManager;
         this.providerStateManager = providerStateManager;
-        this.providerBeans = providerBeans;
-        this.orderExecutionClient = orderExecutionClient;
-    }
-
-    @PostConstruct
-    public void initAccountCaches() {
-        if (providerBeans != null && !providerBeans.isEmpty()) {
-            for (ProviderConfig p : providerBeans) {
-                if (p.getName() != null && !p.getName().isBlank()) {
-                    String prov = normalizeProvider(p.getName());
-                    if (!p.isConfigComplete()) {
-                        p.setActive(false);
-                        providerStateManager.markProviderInactive(prov);
-                        log.warn("Provider '{}' configuration is INCOMPLETE (missing endpoint, timezone, or exchange). Config: {}. Marking INACTIVE.", prov, formatSanitizedConfig(p));
-                        continue;
-                    }
-                    log.info("Proactively probing provider connection manager health on startup: '{}'", prov);
-                    boolean healthy = orderExecutionClient != null && orderExecutionClient.checkProviderHealth(prov);
-                    if (healthy) {
-                        log.info("Provider '{}' connection manager is reachable. Performing Redis account cache init-check.", prov);
-                        boolean cacheValid = ensureAccountCache(prov);
-                        if (cacheValid) {
-                            p.setActive(true);
-                            providerStateManager.markProviderActive(prov);
-                            log.info("Provider '{}' connection manager & account cache are ACTIVE.", prov);
-                        }
-                    } else {
-                        p.setActive(false);
-                        providerStateManager.markProviderInactive(prov);
-                        log.warn("Provider '{}' connection manager is UNREACHABLE/UNHEALTHY. Config: {}. Status set to INACTIVE.", prov, formatSanitizedConfig(p));
-                    }
-                }
-            }
-        }
     }
 
     public record RiskDecision(boolean approved, String reason, String riskGateLevel, double calculatedCost, double stopLossPrice) {}
 
     public ProviderConfig findProviderConfig(String provider) {
-        if (provider == null || provider.isBlank() || providerBeans == null) {
-            return null;
-        }
-        String prov = normalizeProvider(provider);
-        for (ProviderConfig p : providerBeans) {
-            if (prov.equalsIgnoreCase(p.getName())) {
-                return p;
-            }
-        }
-        return null;
-    }
-
-    private String formatSanitizedConfig(ProviderConfig config) {
-        if (config == null) {
-            return "null";
-        }
-        return "ProviderConfig{name='" + config.getName() + '\'' +
-                ", timezone='" + config.getTimezone() + '\'' +
-                ", exchange='" + config.getExchange() + '\'' +
-                ", enabled=" + config.isEnabled() +
-                ", active=" + config.isActive() +
-                ", isComplete=" + config.isConfigComplete() + '}';
+        return providerStateManager.findProviderConfig(provider);
     }
 
     public void markProviderInactive(String provider) {
-        String prov = normalizeProvider(provider);
-        ProviderConfig config = findProviderConfig(prov);
-        if (config != null) {
-            config.setActive(false);
-        }
-        providerStateManager.markProviderInactive(prov);
-        log.warn("Marked provider '{}' INACTIVE in-memory and in Redis. Config: {}", prov, formatSanitizedConfig(config));
+        providerStateManager.markProviderInactive(provider);
     }
 
     public void markProviderActive(String provider) {
-        String prov = normalizeProvider(provider);
-        if (!ensureAccountCache(prov)) {
-            log.warn("Cannot mark provider '{}' ACTIVE: Redis account cache init-check failed.", prov);
-            return;
-        }
-        ProviderConfig config = findProviderConfig(prov);
-        if (config != null) {
-            config.setActive(true);
-        }
-        providerStateManager.markProviderActive(prov);
-        log.info("Marked provider '{}' ACTIVE in-memory and in Redis.", prov);
+        providerStateManager.markProviderActive(provider);
+    }
+
+    public boolean ensureAccountCache(String provider) {
+        return providerStateManager.ensureAccountCache(provider);
     }
 
     private String normalizeProvider(String provider) {
-        if (provider == null || provider.isBlank()) {
-            throw new IllegalArgumentException("Provider must not be null or blank");
-        }
-        return provider.toLowerCase().trim();
+        return ProviderStateManager.normalizeProvider(provider);
     }
 
     /**
@@ -148,7 +76,7 @@ public class RiskManager {
 
         // Fast in-memory check (< 1µs) on ProviderConfig active flag and complete configuration
         if (config == null || !config.isConfigComplete() || !config.isActive() || !redisFacade.hasKey(cashKey)) {
-            log.warn("RISK REJECTED: Provider '{}' configuration incomplete, inactive, or balance cache missing in Redis. Config: {}. Rejecting order {}", prov, formatSanitizedConfig(config), orderId);
+            log.warn("RISK REJECTED: Provider '{}' configuration incomplete, inactive, or balance cache missing in Redis. Config: {}. Rejecting order {}", prov, providerStateManager.formatSanitizedConfig(config), orderId);
             return new RiskDecision(false, "PROVIDER_UNINITIALIZED_OR_INACTIVE", "PROVIDER_HEALTH", estimatedCost, 0.0);
         }
 
@@ -158,7 +86,7 @@ public class RiskManager {
             double startingEquity = redisFacade.getDouble(RedisKeyDef.BALANCE_STARTING_EQUITY, prov);
             double currentCash = redisFacade.getDouble(RedisKeyDef.BALANCE_CASH, prov);
             double blockedMargin = redisFacade.getDouble(RedisKeyDef.BALANCE_BLOCKED, prov);
-            double positionsVal = calculateOpenPositionsValue(prov);
+            double positionsVal = positionStateManager.calculateOpenPositionsValue(prov);
             double totalEquity = currentCash + positionsVal;
             double currentDailyDrawdown = startingEquity - totalEquity;
 
@@ -332,7 +260,7 @@ public class RiskManager {
         double cash = redisFacade.getDouble(RedisKeyDef.BALANCE_CASH, prov);
         double blocked = redisFacade.getDouble(RedisKeyDef.BALANCE_BLOCKED, prov);
         double startingEquity = redisFacade.getDouble(RedisKeyDef.BALANCE_STARTING_EQUITY, prov);
-        double positionsVal = calculateOpenPositionsValue(prov);
+        double positionsVal = positionStateManager.calculateOpenPositionsValue(prov);
         double totalEquity = cash + positionsVal;
         double dailyDrawdown = startingEquity - totalEquity;
         double maxDailyLoss = redisFacade.getDouble(RedisKeyDef.RISK_CONFIG_MAX_DAILY_LOSS, prov);
@@ -395,43 +323,5 @@ public class RiskManager {
             redisFacade.setString(RedisKeyDef.RISK_CONFIG_STOP_LOSS_PCT, prov, String.valueOf(newConfig.get("stop_loss_pct")));
         }
         log.info("Updated dynamic risk configuration in Redis for provider {}: {}", prov, newConfig);
-    }
-
-    private boolean ensureAccountCache(String provider) {
-        String prov = normalizeProvider(provider);
-        List<RedisKeyDef> missing = providerStateManager.getMissingRequiredProviderKeys(prov);
-
-        if (!missing.isEmpty()) {
-            log.warn("Account state init-check FAILED for provider '{}'. Missing mandatory non-defaultable Redis keys: {}. Marking provider INACTIVE.",
-                prov, missing);
-            markProviderInactive(prov);
-            return false;
-        }
-        return true;
-    }
-
-    private double calculateOpenPositionsValue(String provider) {
-        String prov = normalizeProvider(provider);
-        String posPrefix = "positions:" + prov + ":";
-        Set<String> keys = redisFacade.redisTemplate().keys(posPrefix + "*");
-        if (keys == null || keys.isEmpty()) {
-            return 0.0;
-        }
-        double totalVal = 0.0;
-        for (String k : keys) {
-            String posStr = redisFacade.redisTemplate().opsForValue().get(k);
-            if (posStr != null) {
-                int qty = Integer.parseInt(posStr.trim());
-                String symbol = k.substring(posPrefix.length()).toUpperCase();
-                try {
-                    double price = redisFacade.getMarketPrice(prov, symbol);
-                    totalVal += (qty * price);
-                } catch (MissingRedisStateException e) {
-                    log.warn("Missing market reference price for open position calculation of symbol '{}' (provider '{}'): {}",
-                        symbol, prov, e.getMessage());
-                }
-            }
-        }
-        return totalVal;
     }
 }
