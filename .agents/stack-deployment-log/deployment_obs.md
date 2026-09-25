@@ -188,3 +188,16 @@ Deployment run of the Observability (OBS) stack changes for the `distributed-tra
   3. Added legend formatting `Conversion % ({{ticker}})` and smooth line interpolation with 10% fill opacity.
   4. Updated `.agent/component_metrics_tracking.md` visualization specification.
   5. Synchronized files to remote Docker host and restarted Grafana container.
+
+### [2026-09-25T07:15:00+05:30] Success Op - Implement Component Telemetry Dashboard for tick-lb (Envoy L7 Proxy)
+* **Intent**: Telemetry tracking & Grafana dashboard provisioning for Envoy load balancer
+* **Status**: Success (Config & Deployment)
+* **Action**: Created dedicated Grafana dashboard `tick_lb_metrics.json` (`uid: tick_lb_metrics`) under `Component-level-metrics` with 11 panels tracking ingress throughput, connection concurrency, upstream cluster health, p95/p99 proxy latency, network bandwidth, circuit breakers, and memory footprint.
+* **Root Cause Analysis (RCA)**:
+  - `tick-lb` acts as the single L7 entry point for downstream strategy runners consuming gRPC market data and executing orders. While Envoy natively exports statistics on `/stats/prometheus` (scraped by Prometheus every 15s), there was no dedicated dashboard to visualize ingress rates, upstream health, or circuit breaker trips.
+  - Furthermore, downstream metrics queries required explicit isolation via `envoy_http_conn_manager_prefix="grpc_ingress"` to prevent Prometheus admin scrape traffic from skewing request counts and latency statistics.
+* **Fix Applied**:
+  1. Created `config/observability/grafana/dashboards/component_level_metrics/tick_lb_metrics.json` containing 11 panels with isolated `grpc_ingress` filters and templating for `$instance` and `$cluster`.
+  2. Documented Component 3 (`tick-lb`) in `.agent/component_metrics_tracking.md` with all 11 metrics verified as `LIVE`.
+  3. Synchronized dashboard via MCP `sync_project_files` and restarted `grafana` container.
+
