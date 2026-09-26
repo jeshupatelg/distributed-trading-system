@@ -579,3 +579,37 @@
   - Full reactor build `mvn clean test` passed across all 4 modules (`CombinedOrderingSystem`, `shared-models`, `order-processing-service`, `order-management-service`) with 41 unit tests passing (0 failures, 0 errors).
   - Confirmed 0 occurrences of `@Lazy` remain across the entire codebase.
 
+### Deployment Action 18: Configurable Context Path Support in Web Cockpit & BFF Gateway (2026-09-26)
+- **Objective**: 
+  1. Add support for configurable `CONTEXT_PATH` in `web-app` (Trading Web Cockpit & BFF Proxy).
+  2. Set `/web-ui` as default in `docker-compose.yml`, while ensuring zero defaults in application code.
+  3. Support hosting under any reverse proxy subpath or root without requiring frontend recompilation.
+- **Root Cause & Architectural Decision**:
+  - Previously, all frontend API endpoints and WebSocket connections were hardcoded to `/api/v1/...` and `/ws/trading` relative to root `/`.
+  - Running behind subpath reverse proxies (e.g. `https://domain.com/web-ui`) resulted in 404 errors for assets, REST endpoints, and WebSocket upgrades.
+  - Per requirements, no defaults are embedded inside the application code (app defaults to `""` / root if `CONTEXT_PATH` is unset or empty). In `docker-compose.yml`, default is injected via `${CONTEXT_PATH:-/web-ui}`.
+  - Setting Vite's `base: './'` ensures that compiled static assets (`.js`, `.css`) use relative paths and load cleanly under any context subpath.
+  - Dynamic runtime context path resolution was implemented via `window.__CONTEXT_PATH__` injection in `index.html` and a centralized `api.ts` utility (`apiUrl()` and `wsUrl()`), eliminating any requirement to rebuild the frontend bundle when altering `CONTEXT_PATH`.
+- **Fix Applied**:
+  1. **Frontend Centralized API Utility (`web-app/src/utils/api.ts`)**:
+     - Implemented `getContextPath()`, `apiUrl(endpoint)`, and `wsUrl(endpoint)` to dynamically resolve against `window.__CONTEXT_PATH__` with no app defaults.
+  2. **Vite Build Configuration (`web-app/vite.config.ts`)**:
+     - Added `base: './'` to build relative asset import paths.
+  3. **Frontend Components & Hooks**:
+     - Migrated all `fetch` and WebSocket connections across `App.tsx`, `Header.tsx`, `RiskCenter.tsx`, `OrderBook.tsx`, `NotificationCenter.tsx`, `TelemetryMatrix.tsx`, and `useTradingStream.ts` to `apiUrl()` and `wsUrl()`.
+  4. **Fastify Server & BFF Gateway (`web-app/server/index.ts`)**:
+     - Normalized `process.env.CONTEXT_PATH` without hardcoded fallback.
+     - Encapsulated all REST and WebSocket routes inside `registerRoutes` Fastify plugin mounted at `contextPath` and aliased to root `/` for internal network queries.
+     - Configured `@fastify/static` to serve static dist assets from `${contextPath}/` and root `/`.
+     - Injected `<base href="${contextPath}/">` and `<script>window.__CONTEXT_PATH__ = "${contextPath}";</script>` dynamically into `index.html`.
+     - Added redirect rules (`${contextPath}` -> `${contextPath}/`, `/` -> `${contextPath}/` when `contextPath` is configured).
+  5. **Docker Compose Configuration (`docker-compose.yml`)**:
+     - Added `CONTEXT_PATH=${CONTEXT_PATH:-/web-ui}` to the `web-app` environment definition.
+- **Verification**:
+  - Inner-loop deployment synchronized files via `sync_project_files` and redeployed stack via `deploy_compose_stack`.
+  - Verified container startup: `Trading Web Cockpit & BFF Server listening on http://0.0.0.0:3030/web-ui (context path: '/web-ui')`.
+  - Verified HTTP redirect: `GET /web-ui` returns `302 /web-ui/`, `GET /` returns `302 /web-ui/`.
+  - Verified HTML template injection: `GET /web-ui/` returns HTML containing `<base href="/web-ui/" />` and `<script>window.__CONTEXT_PATH__ = "/web-ui";</script>`.
+  - Verified REST endpoint: `GET /web-ui/api/v1/system/health` returns HTTP 200 with service health statuses.
+
+

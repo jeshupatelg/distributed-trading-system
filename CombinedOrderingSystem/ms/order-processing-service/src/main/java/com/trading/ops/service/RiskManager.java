@@ -1,5 +1,6 @@
 package com.trading.ops.service;
 
+import com.trading.ops.telemetry.OpsTelemetry;
 import com.trading.shared.config.ProviderConfig;
 import com.trading.shared.redis.MissingRedisStateException;
 import com.trading.shared.redis.RedisKeyBuilder;
@@ -24,13 +25,16 @@ public class RiskManager {
     private final TradingRedisFacade redisFacade;
     private final PositionStateManager positionStateManager;
     private final ProviderStateManager providerStateManager;
+    private final OpsTelemetry opsTelemetry;
 
     public RiskManager(TradingRedisFacade redisFacade,
                        PositionStateManager positionStateManager,
-                       ProviderStateManager providerStateManager) {
+                       ProviderStateManager providerStateManager,
+                       OpsTelemetry opsTelemetry) {
         this.redisFacade = redisFacade;
         this.positionStateManager = positionStateManager;
         this.providerStateManager = providerStateManager;
+        this.opsTelemetry = opsTelemetry;
     }
 
     public record RiskDecision(boolean approved, String reason, String riskGateLevel, double calculatedCost, double stopLossPrice) {}
@@ -230,10 +234,12 @@ public class RiskManager {
     public synchronized void triggerKillSwitch(String provider) {
         if (provider == null || provider.isBlank()) {
             redisFacade.setBoolean(RedisKeyDef.SYSTEM_KILL_SWITCH_GLOBAL, true);
+            opsTelemetry.setKillSwitchStatus("global", true);
             log.warn("EMERGENCY GLOBAL KILL SWITCH ACTIVATED in Redis!");
         } else {
             String prov = normalizeProvider(provider);
             redisFacade.setBoolean(RedisKeyDef.SYSTEM_KILL_SWITCH_PROVIDER, prov, true);
+            opsTelemetry.setKillSwitchStatus(prov, true);
             log.warn("EMERGENCY KILL SWITCH ACTIVATED for provider {} in Redis!", prov);
         }
     }
@@ -245,10 +251,12 @@ public class RiskManager {
     public synchronized void resetKillSwitch(String provider) {
         if (provider == null || provider.isBlank()) {
             redisFacade.setBoolean(RedisKeyDef.SYSTEM_KILL_SWITCH_GLOBAL, false);
+            opsTelemetry.setKillSwitchStatus("global", false);
             log.info("Global Emergency Kill Switch RESET.");
         } else {
             String prov = normalizeProvider(provider);
             redisFacade.setBoolean(RedisKeyDef.SYSTEM_KILL_SWITCH_PROVIDER, prov, false);
+            opsTelemetry.setKillSwitchStatus(prov, false);
             log.info("Emergency Kill Switch RESET for provider {}.", prov);
         }
     }

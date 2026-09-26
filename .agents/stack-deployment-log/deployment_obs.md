@@ -189,15 +189,16 @@ Deployment run of the Observability (OBS) stack changes for the `distributed-tra
   4. Updated `.agent/component_metrics_tracking.md` visualization specification.
   5. Synchronized files to remote Docker host and restarted Grafana container.
 
-### [2026-09-25T07:15:00+05:30] Success Op - Implement Component Telemetry Dashboard for tick-lb (Envoy L7 Proxy)
-* **Intent**: Telemetry tracking & Grafana dashboard provisioning for Envoy load balancer
-* **Status**: Success (Config & Deployment)
-* **Action**: Created dedicated Grafana dashboard `tick_lb_metrics.json` (`uid: tick_lb_metrics`) under `Component-level-metrics` with 11 panels tracking ingress throughput, connection concurrency, upstream cluster health, p95/p99 proxy latency, network bandwidth, circuit breakers, and memory footprint.
+### [2026-09-26T22:05:00+05:30] Success Op - Implement Domain Telemetry & Grafana Dashboards for OPS and OMS
+* **Intent**: Telemetry tracking & Grafana dashboard provisioning for Order Processing Service (OPS) and Order Management Service (OMS)
+* **Status**: Success (Code, Config & Deployment)
+* **Action**: Instrumented domain telemetry using Micrometer in OPS (`OpsTelemetry`) and OMS (`OmsTelemetry`), created dedicated Grafana dashboards `order_processing_metrics.json` and `order_management_metrics.json`, and updated component tracking documentation.
 * **Root Cause Analysis (RCA)**:
-  - `tick-lb` acts as the single L7 entry point for downstream strategy runners consuming gRPC market data and executing orders. While Envoy natively exports statistics on `/stats/prometheus` (scraped by Prometheus every 15s), there was no dedicated dashboard to visualize ingress rates, upstream health, or circuit breaker trips.
-  - Furthermore, downstream metrics queries required explicit isolation via `envoy_http_conn_manager_prefix="grpc_ingress"` to prevent Prometheus admin scrape traffic from skewing request counts and latency statistics.
+  - `order-processing-service` and `order-management-service` both exposed standard Spring Boot Actuator JVM and HTTP metrics on `/actuator/prometheus`, but lacked business domain telemetry (pre-trade risk gate rejections, emergency kill switch status, broker gRPC submission latency, active pending order gauge, order fill ratio, resolution latency, and reconciliation drift).
 * **Fix Applied**:
-  1. Created `config/observability/grafana/dashboards/component_level_metrics/tick_lb_metrics.json` containing 11 panels with isolated `grpc_ingress` filters and templating for `$instance` and `$cluster`.
-  2. Documented Component 3 (`tick-lb`) in `.agent/component_metrics_tracking.md` with all 11 metrics verified as `LIVE`.
-  3. Synchronized dashboard via MCP `sync_project_files` and restarted `grafana` container.
+  1. Created `OpsTelemetry.java` in `order-processing-service` and instrumented `SignalConsumer.java` and `RiskManager.java` for signal ingress, risk approvals/rejections by gate, risk evaluation latency, broker gRPC latency, and kill switch status.
+  2. Created `OmsTelemetry.java` in `order-management-service` and instrumented `OrderCreateConsumer.java`, `OrderResolutionService.java`, and `ReconciliationJob.java` for order creation rates, resolution rates, fill ratios, pending order gauge, resolution latency, and reconciliation run/drift metrics.
+  3. Created two dedicated Grafana dashboards `order_processing_metrics.json` (`uid: order_processing_metrics`) and `order_management_metrics.json` (`uid: order_management_metrics`) in `config/observability/grafana/dashboards/component_level_metrics/`.
+  4. Updated `.agent/component_metrics_tracking.md` (Components 4 & 5).
+  5. Built and compiled Maven projects, synced files to remote Docker host, and deployed stack.
 

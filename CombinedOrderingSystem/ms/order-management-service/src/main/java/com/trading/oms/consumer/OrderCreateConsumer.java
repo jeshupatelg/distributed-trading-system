@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trading.oms.dto.OrderCreateEvent;
 import com.trading.oms.model.TrackedOrder;
 import com.trading.oms.repository.TrackedOrderRepository;
+import com.trading.oms.telemetry.OmsTelemetry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -15,10 +16,12 @@ public class OrderCreateConsumer {
 
     private final TrackedOrderRepository orderRepository;
     private final ObjectMapper objectMapper;
+    private final OmsTelemetry omsTelemetry;
 
-    public OrderCreateConsumer(TrackedOrderRepository orderRepository, ObjectMapper objectMapper) {
+    public OrderCreateConsumer(TrackedOrderRepository orderRepository, ObjectMapper objectMapper, OmsTelemetry omsTelemetry) {
         this.orderRepository = orderRepository;
         this.objectMapper = objectMapper;
+        this.omsTelemetry = omsTelemetry;
     }
 
     @SuppressWarnings(value = "unused")
@@ -41,6 +44,7 @@ public class OrderCreateConsumer {
             TrackedOrder order = getTrackedOrderFromOrderCreateEvent(event);
 
             orderRepository.save(order);
+            omsTelemetry.recordOrderCreated(event.provider(), event.symbol(), event.side());
             log.info("Saved initial PENDING order record for ID: {} to database.", event.orderId());
 
         } catch (Exception e) {
@@ -64,3 +68,4 @@ public class OrderCreateConsumer {
         return order;
     }
 }
+

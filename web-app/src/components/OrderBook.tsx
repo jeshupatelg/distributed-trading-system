@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Order, PaginationInfo } from "../types/trading";
+import { apiUrl } from "../utils/api";
 import {
   Layers,
   CheckCircle2,
@@ -63,7 +64,7 @@ export const OrderBook: React.FC<OrderBookProps> = ({ orders: initialOrders, pro
       params.append("page", page.toString());
       params.append("limit", "25");
 
-      const res = await fetch(`/api/v1/orders?${params.toString()}`);
+      const res = await fetch(apiUrl(`/api/v1/orders?${params.toString()}`));
       if (!res.ok) throw new Error(`HTTP error ${res.status}`);
       const data = await res.json();
 

@@ -1,0 +1,106 @@
+@startuml
+title Order Processing (OPS) & Order Management (OMS) Telemetry Flow
+
+skinparam BackgroundColor #F9FAFB
+skinparam roundCorner 8
+skinparam shadowing false
+skinparam defaultFontName "Segoe UI", Arial, sans-serif
+
+skinparam rectangle {
+    BackgroundColor #1F2937
+    BorderColor #111827
+    FontColor #FFFFFF
+}
+
+skinparam database {
+    BackgroundColor #0F172A
+    BorderColor #020617
+    FontColor #FFFFFF
+}
+
+skinparam queue {
+    BackgroundColor #7C2D12
+    BorderColor #431407
+    FontColor #FFFFFF
+}
+
+skinparam component {
+    BackgroundColor #374151
+    BorderColor #1F2937
+    FontColor #FFFFFF
+}
+
+' Strategy Layer
+rectangle "Strategy Tier" as StratTier #1E293B;line:0F172A;text:FFFFFF {
+  [Signal Generator (signal-gen-aapl / msft)] as SigGen #FFFFFF;line:94A3B8;text:1F2937
+}
+
+' Kafka Event Topics
+rectangle "Kafka Event Bus" as KafkaTier #7C2D12;line:431407;text:FFFFFF {
+  queue "trading-signals" as TopSignals #FFFFFF;line:FDBA74;text:1F2937
+  queue "order-create-events" as TopOrderCreate #FFFFFF;line:FDBA74;text:1F2937
+  queue "order-reject-events" as TopOrderReject #FFFFFF;line:FDBA74;text:1F2937
+  queue "raw-order-updates" as TopRawUpdates #FFFFFF;line:FDBA74;text:1F2937
+  queue "order-complete-events" as TopOrderComplete #FFFFFF;line:FDBA74;text:1F2937
+}
+
+' Core Java Microservices
+rectangle "Order Processing Service (OPS :8081)" as OPSTier #065F46;line:064E3B;text:FFFFFF {
+  [SignalConsumer] as SC #FFFFFF;line:A7F3D0;text:1F2937
+  [RiskManager (8 Risk Gates)] as RM #FFFFFF;line:A7F3D0;text:1F2937
+  [OrderExecutionClient (gRPC)] as OEC #FFFFFF;line:A7F3D0;text:1F2937
+  [OpsTelemetry (Micrometer)] as OPST #10B981;line:059669;text:FFFFFF
+}
+
+rectangle "Order Management Service (OMS :8082)" as OMSTier #1E3A8A;line:172554;text:FFFFFF {
+  [OrderCreateConsumer] as OCC #FFFFFF;line:BFDBFE;text:1F2937
+  [OrderUpdateConsumer] as OUC #FFFFFF;line:BFDBFE;text:1F2937
+  [OrderResolutionService] as ORS #FFFFFF;line:BFDBFE;text:1F2937
+  [ReconciliationJob] as RecJob #FFFFFF;line:BFDBFE;text:1F2937
+  [OmsTelemetry (Micrometer)] as OMST #3B82F6;line:1D4ED8;text:FFFFFF
+}
+
+' Persistence & Broker Gateway
+database "PostgreSQL\n(trading_agent)" as Postgres #0F172A;line:475569;text:FFFFFF
+database "Redis Cache\n(Balances & Positions)" as Redis #0F172A;line:7C3AED;text:FFFFFF
+rectangle "Broker Gateway (connection-manager)" as Broker #374151;line:1F2937;text:FFFFFF
+
+' Observability Tier
+rectangle "Observability Stack" as ObsTier #475569;line:334155;text:FFFFFF {
+  [Prometheus Daemon (:9090)] as Prom #FFFFFF;line:94A3B8;text:1F2937
+  [Grafana Dashboards (:3000)] as Grafana #FFFFFF;line:94A3B8;text:1F2937
+}
+
+' Event & Data Flows
+SigGen -[#EA580C]-> TopSignals : 1. Publish Signal
+TopSignals -[#EA580C]-> SC : 2. Consume Signal
+
+SC -[#10B981]-> RM : 3. Evaluate Risk
+RM <.[#7C3AED].> Redis : 4. Check & Lock Margin
+RM -.-> OPST : 5. Record Risk Metrics
+
+SC -[#16A34A]-> OEC : 6A. Approved: Dispatch Order
+SC -[#DC2626]-> TopOrderReject : 6B. Rejected: Emit Reject Event
+
+OEC -[#16A34A]-> Broker : 7. Submit gRPC Order
+OEC -[#EA580C]-> TopOrderCreate : 8. Publish OrderCreate
+
+TopOrderCreate -[#EA580C]-> OCC : 9. Ingest OrderCreate
+OCC -[#475569]-> Postgres : 10. INSERT PENDING Order
+OCC -.-> OMST : 11. Record OrderCreated
+
+Broker -[#EA580C]-> TopRawUpdates : 12. Broker Execution Fill
+TopRawUpdates -[#EA580C]-> OUC : 13. Ingest Fill Update
+OUC -[#1E3A8A]-> ORS : 14. Resolve Order
+ORS -[#475569]-> Postgres : 15. UPDATE Terminal Status
+ORS -[#7C3AED]-> Redis : 16. Settle Cash & Positions
+ORS -[#EA580C]-> TopOrderComplete : 17. Emit OrderComplete
+ORS -.-> OMST : 18. Record Resolution & Latency
+RecJob -.-> OMST : 19. Record Drift
+
+' Prometheus Pull Model
+Prom -[#2563EB]-> OPST : 20. HTTP Pull Scrape (:8081/actuator/prometheus)
+Prom -[#2563EB]-> OMST : 21. HTTP Pull Scrape (:8082/actuator/prometheus)
+Grafana -[#16A34A]-> Prom : 22. PromQL Query REST (:9090)
+
+@enduml

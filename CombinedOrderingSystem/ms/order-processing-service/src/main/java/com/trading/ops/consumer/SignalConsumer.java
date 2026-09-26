@@ -8,6 +8,7 @@ import com.trading.ops.dto.OrderRejectEvent;
 import com.trading.ops.dto.SignalEvent;
 import com.trading.ops.service.OrderExecutionClient;
 import com.trading.ops.service.RiskManager;
+import com.trading.ops.telemetry.OpsTelemetry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,6 +26,7 @@ public class SignalConsumer {
     private final OrderExecutionClient executionClient;
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper objectMapper;
+    private final OpsTelemetry opsTelemetry;
 
     @Value("${trading.topics.order-create}")
     private String orderCreateTopic;
@@ -35,11 +37,13 @@ public class SignalConsumer {
     public SignalConsumer(RiskManager riskManager, 
                           OrderExecutionClient executionClient,
                           KafkaTemplate<String, String> kafkaTemplate, 
-                          ObjectMapper objectMapper) {
+                          ObjectMapper objectMapper,
+                          OpsTelemetry opsTelemetry) {
         this.riskManager = riskManager;
         this.executionClient = executionClient;
         this.kafkaTemplate = kafkaTemplate;
         this.objectMapper = objectMapper;
+        this.opsTelemetry = opsTelemetry;
     }
 
     @KafkaListener(topics = "${trading.topics.signals}", groupId = "${spring.kafka.consumer.group-id}")
@@ -63,10 +67,13 @@ public class SignalConsumer {
                 return;
             }
 
+            opsTelemetry.recordSignalReceived(provider, signal.symbol(), action);
+
             // Generate unique order ID
             String clientOrderId = UUID.randomUUID().toString();
 
             // 1. Run comprehensive Pre-Trade Risk Engine evaluation & margin lock
+            long riskStart = System.nanoTime();
             RiskManager.RiskDecision decision = riskManager.evaluateAndLock(
                 clientOrderId,
                 signal.symbol(),
@@ -75,8 +82,10 @@ public class SignalConsumer {
                 action,
                 provider
             );
+            opsTelemetry.recordRiskEvaluationTime(System.nanoTime() - riskStart);
 
             if (!decision.approved()) {
+                opsTelemetry.recordOrderRejected(provider, decision.reason(), decision.riskGateLevel());
                 log.warn("ORDER REJECTED by Pre-Trade Risk Engine. Reason: {}, Gate: {}, Signal: {}", 
                     decision.reason(), decision.riskGateLevel(), signal);
                 try {
@@ -102,6 +111,8 @@ public class SignalConsumer {
                 return;
             }
 
+            opsTelemetry.recordOrderApproved(provider, signal.symbol(), action);
+
             // 2. Submit transaction payload to designated broker gateway via gRPC (with on-exchange Hard Stop Loss)
             OrderRequest.Builder orderRequestBuilder = OrderRequest.newBuilder()
                 .setSymbol(signal.symbol())
@@ -116,8 +127,10 @@ public class SignalConsumer {
 
             OrderRequest orderRequest = orderRequestBuilder.build();
 
+            long submissionStart = System.nanoTime();
             try {
                 OrderResponse response = executionClient.placeOrder(provider, orderRequest);
+                opsTelemetry.recordBrokerSubmission(provider, "SUCCESS", System.nanoTime() - submissionStart);
                 String brokerOrderId = response.getOrderId();
                 if (brokerOrderId.isEmpty()) {
                     brokerOrderId = clientOrderId;
@@ -143,6 +156,7 @@ public class SignalConsumer {
                 log.info("Published order-create-event to Kafka topic '{}' for order ID: {}", orderCreateTopic, brokerOrderId);
 
             } catch (Exception e) {
+                opsTelemetry.recordBrokerSubmission(provider, "ERROR", System.nanoTime() - submissionStart);
                 log.error("Order submission failed. Reverting risk margin lock for order ID: {}", clientOrderId, e);
                 riskManager.revertLock(clientOrderId, decision.calculatedCost(), provider);
                 try {
@@ -170,3 +184,4 @@ public class SignalConsumer {
         }
     }
 }
+

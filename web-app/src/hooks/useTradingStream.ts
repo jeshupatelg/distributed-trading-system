@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { MarketTick, Order, RiskStatus } from "../types/trading";
+import { wsUrl } from "../utils/api";
 
 export function useTradingStream() {
   const [isConnected, setIsConnected] = useState(false);
@@ -11,11 +12,9 @@ export function useTradingStream() {
 
   const connect = useCallback(() => {
     try {
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const host = window.location.host;
-      const wsUrl = `${protocol}//${host}/ws`;
+      const targetWsUrl = wsUrl("/ws");
 
-      const ws = new WebSocket(wsUrl);
+      const ws = new WebSocket(targetWsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {

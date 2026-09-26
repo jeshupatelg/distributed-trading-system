@@ -108,3 +108,82 @@ Grafana queries Prometheus for real-time visualization and alerting. Exposed boa
 *   **Pipeline Latency (System Hot-Path)**: Visualizes the time elapsed for a tick to traverse the pipeline: `Tick Created (Alpaca) -> Ingested (CM) -> Routed (Envoy) -> Strategy Triggered (SignalGen) -> Signal Out (Kafka)`.
 *   **JVM & Container Health**: Graphs memory leaks, thread starvation, CPU throttling, and connection bottlenecks.
 *   **Reconciliation cron lag**: Tracks lag between unresolved transaction counts in Redis and final DB updates in Postgres.
+
+---
+
+## 4. Order Processing (OPS) & Order Management (OMS) Telemetry Architecture
+
+The diagram below details the exact telemetry data paths, Kafka topics, risk evaluation gates, order persistence, and Prometheus pull mechanisms for OPS and OMS.
+
+Refer to the PlantUML definition: [ops_oms_telemetry_flow.puml](file:///c:/Users/jeshu/Projects/distributed-trading-system/design/hld/observability-ui/ops_oms_telemetry_flow.puml).
+
+```mermaid
+flowchart TD
+    subgraph StrategyTier["Strategy Tier"]
+        SigGen["Signal Generator (AAPL / MSFT)"]
+    end
+
+    subgraph KafkaTier["Kafka Event Bus"]
+        TopSignals["trading-signals"]
+        TopOrderCreate["order-create-events"]
+        TopOrderReject["order-reject-events"]
+        TopRawUpdates["raw-order-updates"]
+        TopOrderComplete["order-complete-events"]
+    end
+
+    subgraph OPSTier["Order Processing Service (OPS :8081)"]
+        SC["SignalConsumer"]
+        RM["RiskManager (8 Pre-Trade Risk Gates)"]
+        OEC["OrderExecutionClient (gRPC)"]
+        OPST["OpsTelemetry (Micrometer Registry)"]
+    end
+
+    subgraph OMSTier["Order Management Service (OMS :8082)"]
+        OCC["OrderCreateConsumer"]
+        OUC["OrderUpdateConsumer"]
+        ORS["OrderResolutionService"]
+        RecJob["ReconciliationJob (30s)"]
+        OMST["OmsTelemetry (Micrometer Registry)"]
+    end
+
+    subgraph Persistence["Storage & Broker Gateway"]
+        Postgres[("PostgreSQL DB (trading_agent)")]
+        Redis[("Redis Cache (Balances & Positions)")]
+        Broker["Broker Gateway (connection-manager)"]
+    end
+
+    subgraph ObsTier["Observability Stack"]
+        Prom["Prometheus Server (:9090)"]
+        Grafana["Grafana Dashboards (:3000)"]
+    end
+
+    %% Flow connections
+    SigGen -->|1. Publish Signal| TopSignals
+    TopSignals -->|2. Consume Signal| SC
+    SC -->|3. Evaluate Risk| RM
+    RM <-->|4. Margin Check & Lock| Redis
+    RM -.->|5. Record Risk Metrics| OPST
+    SC -->|6A. Approved: Submit| OEC
+    SC -->|6B. Rejected: Emit Reject| TopOrderReject
+    OEC -->|7. gRPC OrderRequest| Broker
+    OEC -->|8. Emit OrderCreate| TopOrderCreate
+
+    TopOrderCreate -->|9. Ingest OrderCreate| OCC
+    OCC -->|10. INSERT PENDING Order| Postgres
+    OCC -.->|11. Record OrderCreated| OMST
+
+    Broker -->|12. Execution Fill Update| TopRawUpdates
+    TopRawUpdates -->|13. Ingest Fill Update| OUC
+    OUC -->|14. Resolve Order| ORS
+    ORS -->|15. UPDATE Terminal Status| Postgres
+    ORS -->|16. Settle Cash & Positions| Redis
+    ORS -->|17. Emit OrderComplete| TopOrderComplete
+    ORS -.->|18. Record Resolution & Latency| OMST
+    RecJob -.->|19. Record Drift & Health| OMST
+
+    %% Prometheus Scrape
+    Prom -->|20. HTTP Pull Scrape :8081/actuator/prometheus| OPST
+    Prom -->|21. HTTP Pull Scrape :8082/actuator/prometheus| OMST
+    Grafana -->|22. PromQL Query REST :9090| Prom
+```
+

@@ -28,12 +28,15 @@ class RiskManagerTest {
     @Mock
     private ProviderStateManager providerStateManager;
 
+    @Mock
+    private com.trading.ops.telemetry.OpsTelemetry opsTelemetry;
+
     private RiskManager riskManager;
     private ProviderConfig alpacaConfig;
 
     @BeforeEach
     void setUp() {
-        riskManager = new RiskManager(redisFacade, positionStateManager, providerStateManager);
+        riskManager = new RiskManager(redisFacade, positionStateManager, providerStateManager, opsTelemetry);
 
         alpacaConfig = new ProviderConfig("alpaca", "localhost:50051", "America/New_York", "IEX");
         alpacaConfig.setEnabled(true);

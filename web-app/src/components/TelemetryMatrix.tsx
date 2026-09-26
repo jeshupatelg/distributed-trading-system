@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Server, CheckCircle2, AlertTriangle, XCircle, RefreshCw } from "lucide-react";
 import { ServiceHealth } from "../types/trading";
+import { apiUrl } from "../utils/api";
 
 export const TelemetryMatrix: React.FC = () => {
   const [services, setServices] = useState<ServiceHealth[]>([]);
@@ -8,7 +9,7 @@ export const TelemetryMatrix: React.FC = () => {
 
   const fetchHealth = () => {
     setIsLoading(true);
-    fetch("/api/v1/system/health")
+    fetch(apiUrl("/api/v1/system/health"))
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data)) {

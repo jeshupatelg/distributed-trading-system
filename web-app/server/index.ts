@@ -1,8 +1,9 @@
-import fastify from "fastify";
+import fastify, { FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
 import fastifyWs from "@fastify/websocket";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { Redis } from "ioredis";
@@ -16,6 +17,15 @@ const __dirname = path.dirname(__filename);
 
 const PORT = parseInt(process.env.PORT || "3030", 10);
 const HOST = process.env.HOST || "0.0.0.0";
+
+// Configurable context path:
+// Rule: No defaults in application code. If process.env.CONTEXT_PATH is not provided or empty, contextPath is "".
+// If provided (e.g. "/web-ui", "web-ui", "/web-ui/"), normalize to leading slash and no trailing slash ("/web-ui").
+const rawContextPath = process.env.CONTEXT_PATH?.trim();
+const contextPath = rawContextPath && rawContextPath !== "/"
+  ? `/${rawContextPath.replace(/^\/+|\/+$/g, "")}`
+  : "";
+
 const OPS_URL = process.env.OPS_URL || "http://order-processing-service:8081";
 const OMS_URL = process.env.OMS_URL || "http://order-management-service:8082";
 const NOTIFICATION_URL = process.env.NOTIFICATION_URL || "http://notification-service:8085";
@@ -100,25 +110,29 @@ const server = fastify({
   },
 });
 
-async function main() {
-  await server.register(cors, {
-    origin: "*",
-  });
+const distPath = path.join(__dirname, "../dist");
 
-  await server.register(fastifyWs);
+function renderIndexHtml(): string {
+  const indexPath = path.join(distPath, "index.html");
+  if (!fs.existsSync(indexPath)) {
+    return "<!doctype html><html><body>App bundle not found. Please build the frontend.</body></html>";
+  }
+  let html = fs.readFileSync(indexPath, "utf-8");
+  const baseTag = `<base href="${contextPath ? `${contextPath}/` : "/"}" />`;
+  const scriptTag = `<script>window.__CONTEXT_PATH__ = ${JSON.stringify(contextPath)};</script>`;
 
-  // Serve compiled React bundle in production
-  const distPath = path.join(__dirname, "../dist");
-  await server.register(fastifyStatic, {
-    root: distPath,
-    prefix: "/",
-    wildcard: false,
-  });
+  if (html.includes("<head>")) {
+    html = html.replace("<head>", `<head>\n    ${baseTag}\n    ${scriptTag}`);
+  } else {
+    html = `${baseTag}\n${scriptTag}\n${html}`;
+  }
+  return html;
+}
 
-  // --- REST Routes (BFF Layer) ---
-
+// All BFF REST and WebSocket routes encapsulated in a Fastify plugin for prefix support
+async function registerRoutes(app: FastifyInstance) {
   // 1. Risk Status Proxy
-  server.get("/api/v1/risk/status", async (req, reply) => {
+  app.get("/api/v1/risk/status", async (req, reply) => {
     const { provider = "alpaca" } = req.query as { provider?: string };
     try {
       const res = await fetch(`${OPS_URL}/api/v1/risk/status?provider=${provider}`);
@@ -142,7 +156,7 @@ async function main() {
   });
 
   // 2. Risk Config Proxy
-  server.get("/api/v1/risk/config", async (req, reply) => {
+  app.get("/api/v1/risk/config", async (req, reply) => {
     const { provider = "alpaca" } = req.query as { provider?: string };
     try {
       const res = await fetch(`${OPS_URL}/api/v1/risk/config?provider=${provider}`);
@@ -158,7 +172,7 @@ async function main() {
     }
   });
 
-  server.post("/api/v1/risk/config", async (req, reply) => {
+  app.post("/api/v1/risk/config", async (req, reply) => {
     const { provider = "alpaca" } = req.query as { provider?: string };
     try {
       const res = await fetch(`${OPS_URL}/api/v1/risk/config?provider=${provider}`, {
@@ -174,7 +188,7 @@ async function main() {
   });
 
   // 3. Emergency Kill Switch Triggers
-  server.post("/api/v1/risk/kill-switch/trigger", async (req, reply) => {
+  app.post("/api/v1/risk/kill-switch/trigger", async (req, reply) => {
     const { provider = "alpaca", liquidate = "true" } = req.query as { provider?: string; liquidate?: string };
     try {
       const res = await fetch(`${OPS_URL}/api/v1/risk/kill-switch/trigger?liquidate=${liquidate}&provider=${provider}`, {
@@ -186,7 +200,7 @@ async function main() {
     }
   });
 
-  server.post("/api/v1/risk/kill-switch/reset", async (req, reply) => {
+  app.post("/api/v1/risk/kill-switch/reset", async (req, reply) => {
     const { provider = "alpaca" } = req.query as { provider?: string };
     try {
       const res = await fetch(`${OPS_URL}/api/v1/risk/kill-switch/reset?provider=${provider}`, {
@@ -199,7 +213,7 @@ async function main() {
   });
 
   // 4. Order Feed Proxy (Direct Read-Only DB Query from PostgreSQL with Filtering & Pagination)
-  server.get("/api/v1/orders", async (req, reply) => {
+  app.get("/api/v1/orders", async (req, reply) => {
     const {
       symbol,
       side,
@@ -356,7 +370,7 @@ async function main() {
   });
 
   // 5. System Health & Telemetry Aggregation
-  server.get("/api/v1/system/health", async (_req, reply) => {
+  app.get("/api/v1/system/health", async (_req, reply) => {
     const checks = [
       { name: "Order Processing Service (OPS)", endpoint: `${OPS_URL}/actuator/health` },
       { name: "Order Management Service (OMS)", endpoint: `${OMS_URL}/actuator/health` },
@@ -405,8 +419,8 @@ async function main() {
     return reply.send(statuses);
   });
 
-  // 5. Real-Time Price Cache Query (Redis Direct)
-  server.get("/api/v1/market/prices", async (req, reply) => {
+  // 6. Real-Time Price Cache Query (Redis Direct)
+  app.get("/api/v1/market/prices", async (req, reply) => {
     const { symbols = "AAPL,MSFT" } = req.query as { symbols?: string };
     const symList = symbols.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
     const prices = await getLivePricesFromRedis(symList);
@@ -417,8 +431,8 @@ async function main() {
     });
   });
 
-  // 6. Notification Service Management Proxy
-  server.get("/api/v1/notify/status", async (_req, reply) => {
+  // 7. Notification Service Management Proxy
+  app.get("/api/v1/notify/status", async (_req, reply) => {
     try {
       const res = await fetch(`${NOTIFICATION_URL}/api/v1/notify/status`, {
         signal: AbortSignal.timeout(3000),
@@ -434,7 +448,7 @@ async function main() {
     }
   });
 
-  server.post("/api/v1/notify/test", async (req, reply) => {
+  app.post("/api/v1/notify/test", async (req, reply) => {
     try {
       const res = await fetch(`${NOTIFICATION_URL}/api/v1/notify/test`, {
         method: "POST",
@@ -450,7 +464,7 @@ async function main() {
     }
   });
 
-  server.post("/api/v1/notify/config", async (req, reply) => {
+  app.post("/api/v1/notify/config", async (req, reply) => {
     if (!redis) {
       return reply.status(503).send({ error: "Redis not connected for config persistence" });
     }
@@ -488,8 +502,8 @@ async function main() {
     }
   });
 
-  // --- WebSocket Streaming Route ---
-  server.get("/ws", { websocket: true }, (connection: any) => {
+  // 8. WebSocket Streaming Route
+  app.get("/ws", { websocket: true }, (connection: any) => {
     server.log.info("Client connected to trading stream WebSocket");
     const ws = connection?.socket ?? connection;
     if (!ws) {
@@ -547,15 +561,90 @@ async function main() {
       server.log.warn(`WebSocket error: ${err.message}`);
     });
   });
+}
+
+async function main() {
+  await server.register(cors, {
+    origin: "*",
+  });
+
+  await server.register(fastifyWs);
+
+  // Serve compiled React bundle in production with configurable context path support
+  if (contextPath) {
+    // 1. Static asset prefix matching configured context path (e.g. /web-ui/assets/...)
+    await server.register(fastifyStatic, {
+      root: distPath,
+      prefix: `${contextPath}/`,
+      wildcard: false,
+      index: false,
+    });
+    // 2. Also register static files at root / for direct asset access
+    await server.register(fastifyStatic, {
+      root: distPath,
+      prefix: "/",
+      wildcard: false,
+      index: false,
+      decorateReply: false,
+    });
+  } else {
+    await server.register(fastifyStatic, {
+      root: distPath,
+      prefix: "/",
+      wildcard: false,
+      index: false,
+    });
+  }
+
+  // Register REST and WebSocket routes
+  if (contextPath) {
+    // Mount routes under contextPath prefix (e.g. /web-ui/api/v1/... and /web-ui/ws)
+    await server.register(registerRoutes, { prefix: contextPath });
+    // Mount routes at root as alias so calls without context path also succeed
+    await server.register(registerRoutes);
+
+    // Redirect context path without trailing slash (e.g. /web-ui -> /web-ui/)
+    server.get(contextPath, async (_req, reply) => {
+      return reply.redirect(`${contextPath}/`, 302);
+    });
+
+    // Explicit route for contextPath/ root SPA document
+    server.get(`${contextPath}/`, async (_req, reply) => {
+      return reply.type("text/html; charset=utf-8").send(renderIndexHtml());
+    });
+
+    // Also redirect root / to contextPath/ when context path is active
+    server.get("/", async (_req, reply) => {
+      return reply.redirect(`${contextPath}/`, 302);
+    });
+  } else {
+    // No context path configured: register routes directly at root
+    await server.register(registerRoutes);
+
+    server.get("/", async (_req, reply) => {
+      return reply.type("text/html; charset=utf-8").send(renderIndexHtml());
+    });
+  }
 
   // SPA Fallback for client routing
-  server.setNotFoundHandler(async (_req, reply) => {
-    return reply.sendFile("index.html");
+  server.setNotFoundHandler(async (req, reply) => {
+    // If it's an API request, return 404 JSON instead of HTML
+    if (req.url.includes("/api/")) {
+      return reply.status(404).send({ error: "Endpoint not found", path: req.url });
+    }
+
+    // If contextPath is configured and path doesn't start with contextPath, redirect to contextPath/
+    if (contextPath && !req.url.startsWith(contextPath)) {
+      return reply.redirect(`${contextPath}/`, 302);
+    }
+
+    return reply.type("text/html; charset=utf-8").send(renderIndexHtml());
   });
 
   try {
     await server.listen({ port: PORT, host: HOST });
-    server.log.info(`Trading Web Cockpit & BFF Server listening on http://${HOST}:${PORT}`);
+    const fullUrl = `http://${HOST}:${PORT}${contextPath}`;
+    server.log.info(`Trading Web Cockpit & BFF Server listening on ${fullUrl} (context path: '${contextPath || "/"}')`);
   } catch (err) {
     server.log.error(err);
     process.exit(1);

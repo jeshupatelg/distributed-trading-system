@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Shield, AlertCircle, Settings, CheckCircle2 } from "lucide-react";
 import { RiskStatus, RiskConfig } from "../types/trading";
+import { apiUrl } from "../utils/api";
 
 interface RiskCenterProps {
   riskStatus: RiskStatus | null;
@@ -19,7 +20,7 @@ export const RiskCenter: React.FC<RiskCenterProps> = ({ riskStatus, provider, on
 
   useEffect(() => {
     // Fetch active dynamic config
-    fetch(`/api/v1/risk/config?provider=${provider}`)
+    fetch(apiUrl(`/api/v1/risk/config?provider=${provider}`))
       .then((res) => res.json())
       .then((data) => {
         if (data) {
@@ -38,7 +39,7 @@ export const RiskCenter: React.FC<RiskCenterProps> = ({ riskStatus, provider, on
     setIsUpdating(true);
     setUpdateSuccess(false);
     try {
-      const res = await fetch(`/api/v1/risk/config?provider=${provider}`, {
+      const res = await fetch(apiUrl(`/api/v1/risk/config?provider=${provider}`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),

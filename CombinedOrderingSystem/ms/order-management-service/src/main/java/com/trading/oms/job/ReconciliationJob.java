@@ -19,13 +19,16 @@ public class ReconciliationJob {
     private final TrackedOrderRepository orderRepository;
     private final ReconciliationClient reconciliationClient;
     private final OrderResolutionService resolutionService;
+    private final com.trading.oms.telemetry.OmsTelemetry omsTelemetry;
 
     public ReconciliationJob(TrackedOrderRepository orderRepository, 
                              ReconciliationClient reconciliationClient,
-                             OrderResolutionService resolutionService) {
+                             OrderResolutionService resolutionService,
+                             com.trading.oms.telemetry.OmsTelemetry omsTelemetry) {
         this.orderRepository = orderRepository;
         this.reconciliationClient = reconciliationClient;
         this.resolutionService = resolutionService;
+        this.omsTelemetry = omsTelemetry;
     }
 
     /**
@@ -34,42 +37,52 @@ public class ReconciliationJob {
     @Scheduled(fixedDelayString = "${trading.reconciliation.interval-ms:30000}")
     public void reconcilePendingOrders() {
         log.info("Starting scheduled reconciliation check for pending orders...");
-        List<TrackedOrder> pendingOrders = orderRepository.findByStatus("PENDING");
-        if (pendingOrders.isEmpty()) {
-            log.info("No pending orders found in the database. Reconciliation complete.");
-            return;
-        }
-
-        log.info("Found {} pending orders to reconcile.", pendingOrders.size());
-        for (TrackedOrder order : pendingOrders) {
-            String orderId = order.getOrderId();
-            if (order.getProvider() == null || order.getProvider().isBlank()) {
-                log.error("TrackedOrder ID {} is missing mandatory provider field. Skipping reconciliation.", orderId);
-                continue;
+        boolean success = true;
+        try {
+            List<TrackedOrder> pendingOrders = orderRepository.findByStatus("PENDING");
+            if (pendingOrders.isEmpty()) {
+                log.info("No pending orders found in the database. Reconciliation complete.");
+                return;
             }
-            String provider = order.getProvider().toLowerCase().trim();
 
-            try {
-                OrderStatusResponse response = reconciliationClient.getOrderStatus(provider, orderId);
-                String brokerStatus = response.getStatus().toLowerCase();
-                int filledQty = response.getFilledQty();
-                double filledAvgPrice = response.getFilledAvgPrice();
-
-                log.info("Reconciliation fetched status for order {}: broker_status='{}', filled_qty={}, filled_price={}",
-                    orderId, brokerStatus, filledQty, filledAvgPrice);
-
-                if ("filled".equals(brokerStatus) || "completed".equals(brokerStatus)) {
-                    resolutionService.resolveOrder(orderId, "COMPLETED", filledQty, filledAvgPrice);
-                } else if ("canceled".equals(brokerStatus) || "rejected".equals(brokerStatus) || "expired".equals(brokerStatus)) {
-                    resolutionService.resolveOrder(orderId, "FAILED", filledQty, filledAvgPrice);
-                } else {//TODO: add timeout logic for stale stop-loss orders
-                    log.info("Order {} is still active on broker (broker_status='{}'). No action taken.", orderId, brokerStatus);
+            log.info("Found {} pending orders to reconcile.", pendingOrders.size());
+            for (TrackedOrder order : pendingOrders) {
+                String orderId = order.getOrderId();
+                if (order.getProvider() == null || order.getProvider().isBlank()) {
+                    log.error("TrackedOrder ID {} is missing mandatory provider field. Skipping reconciliation.", orderId);
+                    continue;
                 }
+                String provider = order.getProvider().toLowerCase().trim();
 
-            } catch (Exception e) {
-                log.error("Failed to reconcile order status for order ID: {} via provider: {}", orderId, provider, e);
+                try {
+                    OrderStatusResponse response = reconciliationClient.getOrderStatus(provider, orderId);
+                    String brokerStatus = response.getStatus().toLowerCase();
+                    int filledQty = response.getFilledQty();
+                    double filledAvgPrice = response.getFilledAvgPrice();
+
+                    log.info("Reconciliation fetched status for order {}: broker_status='{}', filled_qty={}, filled_price={}",
+                        orderId, brokerStatus, filledQty, filledAvgPrice);
+
+                    if ("filled".equals(brokerStatus) || "completed".equals(brokerStatus)) {
+                        resolutionService.resolveOrder(orderId, "COMPLETED", filledQty, filledAvgPrice);
+                        omsTelemetry.recordReconciliationDrift(provider, 1);
+                    } else if ("canceled".equals(brokerStatus) || "rejected".equals(brokerStatus) || "expired".equals(brokerStatus)) {
+                        resolutionService.resolveOrder(orderId, "FAILED", filledQty, filledAvgPrice);
+                        omsTelemetry.recordReconciliationDrift(provider, 1);
+                    } else {//TODO: add timeout logic for stale stop-loss orders
+                        log.info("Order {} is still active on broker (broker_status='{}'). No action taken.", orderId, brokerStatus);
+                    }
+
+                } catch (Exception e) {
+                    log.error("Failed to reconcile order status for order ID: {} via provider: {}", orderId, provider, e);
+                }
             }
+        } catch (Exception e) {
+            success = false;
+            log.error("Error occurred during scheduled reconciliation run", e);
+        } finally {
+            omsTelemetry.recordReconciliationRun("reconcilePendingOrders", success ? "success" : "failure");
+            log.info("Scheduled reconciliation check completed.");
         }
-        log.info("Scheduled reconciliation check completed.");
     }
 }

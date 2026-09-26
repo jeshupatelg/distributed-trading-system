@@ -16,6 +16,7 @@ import {
   Check,
   ShieldAlert,
 } from "lucide-react";
+import { apiUrl } from "../utils/api";
 
 interface ChannelStatus {
   enabled: boolean;
@@ -98,7 +99,7 @@ export const NotificationCenter: React.FC = () => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const res = await fetch("/api/v1/notify/status");
+      const res = await fetch(apiUrl("/api/v1/notify/status"));
       if (!res.ok) {
         throw new Error(`Failed to fetch status: HTTP ${res.status}`);
       }
@@ -177,7 +178,7 @@ export const NotificationCenter: React.FC = () => {
         payload.evolution.apikey = evolutionApiKey.trim();
       }
 
-      const res = await fetch("/api/v1/notify/config", {
+      const res = await fetch(apiUrl("/api/v1/notify/config"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -202,7 +203,7 @@ export const NotificationCenter: React.FC = () => {
     setTestResult(null);
 
     try {
-      const res = await fetch("/api/v1/notify/test", {
+      const res = await fetch(apiUrl("/api/v1/notify/test"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

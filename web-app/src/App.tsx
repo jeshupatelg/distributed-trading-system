@@ -10,6 +10,7 @@ import { NotificationCenter } from "./components/NotificationCenter";
 import { useTradingStream } from "./hooks/useTradingStream";
 import { RiskStatus, Order } from "./types/trading";
 import { LayoutDashboard, Shield, Layers, Server, Bell } from "lucide-react";
+import { apiUrl } from "./utils/api";
 
 export default function App() {
   const [selectedProvider, setSelectedProvider] = useState<string>("alpaca");
@@ -20,7 +21,7 @@ export default function App() {
 
   // Fetch initial risk status from BFF
   const fetchRiskStatus = useCallback(() => {
-    fetch(`/api/v1/risk/status?provider=${selectedProvider}`)
+    fetch(apiUrl(`/api/v1/risk/status?provider=${selectedProvider}`))
       .then((res) => res.json())
       .then((data: RiskStatus) => {
         if (data) setRiskStatus(data);
@@ -30,7 +31,7 @@ export default function App() {
 
   // Fetch initial orders from BFF
   const fetchOrders = useCallback(() => {
-    fetch(`/api/v1/orders?provider=${selectedProvider}&limit=25`)
+    fetch(apiUrl(`/api/v1/orders?provider=${selectedProvider}&limit=25`))
       .then((res) => res.json())
       .then((data: any) => {
         const list = Array.isArray(data) ? data : data?.orders;

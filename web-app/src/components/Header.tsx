@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Shield, ShieldAlert, ShieldCheck, Activity, Power, RefreshCw, AlertTriangle } from "lucide-react";
 import { RiskStatus } from "../types/trading";
+import { apiUrl } from "../utils/api";
 
 interface HeaderProps {
   riskStatus: RiskStatus | null;
@@ -26,7 +27,7 @@ export const Header: React.FC<HeaderProps> = ({
   const handleTriggerKillSwitch = async () => {
     setIsProcessing(true);
     try {
-      const res = await fetch(`/api/v1/risk/kill-switch/trigger?liquidate=${liquidate}&provider=${selectedProvider}`, {
+      const res = await fetch(apiUrl(`/api/v1/risk/kill-switch/trigger?liquidate=${liquidate}&provider=${selectedProvider}`), {
         method: "POST",
       });
       if (res.ok) {
@@ -43,7 +44,7 @@ export const Header: React.FC<HeaderProps> = ({
   const handleResetKillSwitch = async () => {
     setIsProcessing(true);
     try {
-      const res = await fetch(`/api/v1/risk/kill-switch/reset?provider=${selectedProvider}`, {
+      const res = await fetch(apiUrl(`/api/v1/risk/kill-switch/reset?provider=${selectedProvider}`), {
         method: "POST",
       });
       if (res.ok) {

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trading.oms.dto.OrderCompleteEvent;
 import com.trading.oms.model.TrackedOrder;
 import com.trading.oms.repository.TrackedOrderRepository;
+import com.trading.oms.telemetry.OmsTelemetry;
 import com.trading.shared.config.ProviderConfig;
 import com.trading.shared.redis.RedisKeyBuilder;
 import com.trading.shared.redis.RedisKeyDef;
@@ -28,6 +29,7 @@ public class OrderResolutionService {
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final ObjectMapper objectMapper;
     private final List<ProviderConfig> providerBeans;
+    private final OmsTelemetry omsTelemetry;
 
     @Value("${trading.topics.order-complete}")
     private String orderCompleteTopic;
@@ -37,17 +39,20 @@ public class OrderResolutionService {
                                   PositionStateManager positionStateManager,
                                   KafkaTemplate<String, String> kafkaTemplate, 
                                   ObjectMapper objectMapper,
-                                  List<ProviderConfig> providerBeans) {
+                                  List<ProviderConfig> providerBeans,
+                                  OmsTelemetry omsTelemetry) {
         this.orderRepository = orderRepository;
         this.redisFacade = redisFacade;
         this.positionStateManager = positionStateManager;
         this.kafkaTemplate = kafkaTemplate;
         this.objectMapper = objectMapper;
         this.providerBeans = providerBeans;
+        this.omsTelemetry = omsTelemetry;
     }
 
     @Transactional
     public void resolveOrder(String orderId, String status, int filledQty, double filledAvgPrice) {
+        long startTime = System.nanoTime();
         TrackedOrder order = orderRepository.findById(orderId).orElse(null);
         if (order == null) {
             log.warn("Order ID {} not found in database during resolution. Attempting Redis pending set cleanup.", orderId);
@@ -72,6 +77,8 @@ public class OrderResolutionService {
 
         // 3. Emit Kafka order-complete-event
         publishOrderCompleteEvent(order, status, filledQty, filledAvgPrice);
+
+        omsTelemetry.recordOrderResolved(order.getProvider(), status, order.getSide(), System.nanoTime() - startTime);
     }
 
     private void publishOrderCompleteEvent(TrackedOrder order, String status, int filledQty, double filledAvgPrice) {
