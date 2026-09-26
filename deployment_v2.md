@@ -1,4 +1,3 @@
-<<<<<<< Updated upstream
 # Deployment Log - v2
 
 ## Deployment Action 1: Fix Order Processing & Management Kafka Consumers
@@ -22,7 +21,7 @@
        2. Daily Loss Gate (evaluating real-time cumulative drawdown vs `risk:config:max_daily_loss`).
        3. Fat-Finger & Price Collar Gate (rejecting prices deviating > 1.5% from market tick).
        4. Velocity Rate Throttler (max 5 orders/sec per symbol; max 30 orders/min system-wide).
-       5. Max Position Sizing & Concentration Gate (max 500 qty, max ,000 value, max 20% equity concentration).
+       5. Max Position Sizing & Concentration Gate (max 500 qty, max $10,000 value, max 20% equity concentration).
        6. Cash Margin Verification & Reservation.
        7. Automatic dynamic stop loss price calculation.
      - Updated `SignalConsumer.java` to pass stop loss prices to the broker and handle pre-trade rejections.
@@ -185,7 +184,6 @@
     - Status remained stable at `ACTIVE` with zero flapping observed.
     - Kafka consumer group `oms-group` listening on `raw-order-updates` and `order-create-events`.
   - **Container Fleet**: All 20/20 whitelisted containers confirmed `running` and healthy on remote Docker daemon.
-=======
 # Deployment Log - v2
 
 ## Deployment Action 1: Fix Order Processing & Management Kafka Consumers
@@ -631,3 +629,15 @@
 - **Verification**:
   - Full reactor build `mvn clean test` passed across all 4 modules (`CombinedOrderingSystem`, `shared-models`, `order-processing-service`, `order-management-service`) with 37 unit tests passing (0 failures, 0 errors).
   - Confirmed 0 occurrences of `ORDERS_PENDING` remain in production application code.
+
+### Deployment Action 20: Remote Host Sync & Outer-Loop Redeployment Attempt for Commit 709a178 (2026-09-27)
+- **Objective**: Synchronize remote Docker host git repository to commit `709a178` and trigger outer-loop container rebuild and redeployment.
+- **Root Cause Analysis (RCA)**:
+  - `git_sync_remote` successfully reset the remote repository to commit `709a178`.
+  - During execution of `deploy_compose_stack`, concurrent multi-stage Docker builds (`mvn clean package`) for `order-processing-service` and `order-management-service` caused high CPU/memory utilization on the remote host (`homeserver`).
+  - This resulted in an Out-Of-Memory (OOM) kernel freeze on the physical host, dropping SSH tunnel connectivity (`remote-docker-gate` exit status 255).
+- **Status & Fix Applied**:
+  - Fixed merge conflict markers in `deployment_v2.md`.
+  - Git repository on remote host is already at `709a178`.
+  - Pending host reboot / connection recovery to finalize container deployment.
+
