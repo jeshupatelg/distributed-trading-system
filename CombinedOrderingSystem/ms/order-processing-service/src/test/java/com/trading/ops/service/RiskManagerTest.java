@@ -109,14 +109,8 @@ class RiskManagerTest {
     }
 
     @Test
-    @DisplayName("Should delegate markProviderActive and markProviderInactive to ProviderStateManager")
+    @DisplayName("Should delegate findProviderConfig to ProviderStateManager")
     void testDelegationToProviderStateManager() {
-        riskManager.markProviderActive("alpaca");
-        verify(providerStateManager).markProviderActive("alpaca");
-
-        riskManager.markProviderInactive("alpaca");
-        verify(providerStateManager).markProviderInactive("alpaca");
-
         riskManager.findProviderConfig("alpaca");
         verify(providerStateManager).findProviderConfig("alpaca");
     }

@@ -1,0 +1,104 @@
+@startuml jobs_sequence
+title Scheduled Maintenance Jobs & Redis Keyspace Flow
+
+autonumber
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+
+box "Order Management Service (OMS Jobs)" #LightPink
+participant "ProviderHealthCheckJob" as PHJ
+participant "ReconciliationJob" as RJ
+participant "DailyEquityRefreshJob" as DERJ
+participant "EquityReconciliationService" as ERS
+participant "ProviderStateManager" as PSM
+participant "PositionStateManager" as POS
+participant "TradingRedisFacade" as TRF
+participant "PostgreSQL DB" as DB
+end box
+
+box "External Services" #LightCyan
+participant "Connection Manager (gRPC)" as CM
+participant "Redis In-Memory Store" as Redis
+end box
+
+== Job 1: Provider Health Recovery Check (Every 15s) ==
+PHJ -> PSM: getProviderStatus("alpaca")
+PSM -> TRF: getString(PROVIDER_STATUS, "alpaca")
+TRF -> Redis: GET provider:status:alpaca
+Redis --> TRF: "INACTIVE"
+
+alt Provider Status == INACTIVE
+    PHJ -> CM: checkHealth("alpaca") (gRPC)
+    CM --> PHJ: HEALTHY
+    PHJ -> PSM: markProviderActive("alpaca")
+    PSM -> PSM: isProviderStateFullyInitialized("alpaca")
+    loop For each required non-defaultable key
+        PSM -> TRF: hasKey(keyDef, "alpaca")
+        TRF -> Redis: EXISTS balance:cash:alpaca / balance:blocked:alpaca / etc.
+    end
+    alt State Complete
+        PSM -> TRF: setString(PROVIDER_STATUS, "alpaca", "ACTIVE")
+        TRF -> Redis: SET provider:status:alpaca "ACTIVE"
+    else State Incomplete
+        PSM -> TRF: setString(PROVIDER_STATUS, "alpaca", "INACTIVE")
+        TRF -> Redis: SET provider:status:alpaca "INACTIVE"
+    end
+end
+
+== Job 2: Pending Order Reconciliation (Every 30s) ==
+RJ -> DB: findByStatus("PENDING")
+DB --> RJ: List<TrackedOrder> [ORD-1001]
+
+loop For each pending order
+    RJ -> CM: getOrderStatus("alpaca", "ORD-1001") (gRPC)
+    CM --> RJ: OrderStatusResponse(status="filled", filledQty=10, avgPrice=336.87)
+    RJ -> ERS: resolveOrder("ORD-1001", "COMPLETED", 10, 336.87)
+    ERS -> DB: UPDATE tracked_orders SET status='COMPLETED'
+    
+    group Operational Resolution Settlement Ops
+        ERS -> TRF: increment("balance:blocked:alpaca", -estimatedCost)
+        TRF -> Redis: INCRBYFLOAT balance:blocked:alpaca -3368.70
+        ERS -> TRF: removeFromSet(ORDERS_PENDING, "alpaca", "ORD-1001")
+        TRF -> Redis: SREM orders:pending:alpaca "ORD-1001"
+        ERS -> TRF: increment("balance:cash:alpaca", -executionCost)
+        TRF -> Redis: INCRBYFLOAT balance:cash:alpaca -3368.70
+        ERS -> POS: settlePosition("alpaca", "AAPL", "BUY", 10)
+        POS -> TRF: setInteger(POSITIONS, "alpaca", "AAPL", 10)
+        TRF -> Redis: SET positions:alpaca:AAPL "10"
+    end
+end
+
+== Job 3: Daily Equity Midnight Rollover (Every 1m) ==
+DERJ -> TRF: getString(BALANCE_LAST_RESET_DATE, "alpaca")
+TRF -> Redis: GET balance:last_reset_date:alpaca
+Redis --> TRF: "2026-09-26"
+
+alt Local Exchange Date (e.g. "2026-09-27") != Last Reset Date ("2026-09-26")
+    DERJ -> ERS: reconcileDailyStartingEquity(providerConfig, "2026-09-27")
+    activate ERS
+    ERS -> CM: getAccountDetails("alpaca") (gRPC)
+    
+    alt Broker gRPC Success
+        CM --> ERS: AccountDetailsResponse(equity=50000.0, cash=46631.30)
+        group Operational Equity Rollover Write Ops
+            ERS -> TRF: setDouble(BALANCE_STARTING_EQUITY, "alpaca", 50000.0)
+            TRF -> Redis: SET balance:starting_equity:alpaca "50000.0"
+            ERS -> TRF: setDouble(BALANCE_CASH, "alpaca", 46631.30)
+            TRF -> Redis: SET balance:cash:alpaca "46631.30"
+            ERS -> TRF: setString(BALANCE_LAST_RESET_DATE, "alpaca", "2026-09-27")
+            TRF -> Redis: SET balance:last_reset_date:alpaca "2026-09-27"
+        end
+    else Broker gRPC Failure (Internal Fallback Calculation)
+        ERS -> TRF: getDouble(BALANCE_CASH, "alpaca")
+        TRF -> Redis: GET balance:cash:alpaca
+        ERS -> POS: calculateOpenPositionsValue("alpaca")
+        POS -> Redis: KEYS positions:alpaca:* & GET prices
+        ERS -> TRF: setDouble(BALANCE_STARTING_EQUITY, "alpaca", closingEquity)
+        TRF -> Redis: SET balance:starting_equity:alpaca "50000.0"
+        ERS -> TRF: setString(BALANCE_LAST_RESET_DATE, "alpaca", "2026-09-27")
+        TRF -> Redis: SET balance:last_reset_date:alpaca "2026-09-27"
+    end
+    deactivate ERS
+end
+
+@enduml

@@ -1,0 +1,134 @@
+@startuml runtime_signal_event_sequence
+title Runtime Signal Processing & Redis Keyspace Flow
+
+autonumber
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+
+box "Order Processing Service (OPS)" #LightYellow
+participant "SignalConsumer" as SC
+participant "RiskManager" as RM
+participant "PositionStateManager" as POS_OPS
+participant "TradingRedisFacade" as TRF_OPS
+participant "OrderExecutionClient" as OEC
+end box
+
+box "External / Shared Tier" #LightCyan
+participant "Kafka (trading-signals)" as K_SIG
+participant "Redis In-Memory Store" as Redis
+participant "Connection Manager (gRPC)" as CM
+participant "Kafka (order-events)" as K_EVT
+end box
+
+box "Order Management Service (OMS)" #LightPink
+participant "OrderCreateConsumer" as OCC
+participant "OrderResolutionService" as ORS
+participant "PositionStateManager" as POS_OMS
+participant "TradingRedisFacade" as TRF_OMS
+participant "PostgreSQL DB" as DB
+end box
+
+== Phase 1: Signal Intake & Pre-Trade Risk Evaluation (OPS) ==
+K_SIG -> SC: Consume trading-signal (orderId, symbol, qty, price, side, provider)
+SC -> RM: evaluateAndLock(orderId, symbol, qty, price, side, provider)
+activate RM
+
+group Gate 1: Kill Switch Inspection (Read-Only)
+    RM -> TRF_OPS: getBoolean(SYSTEM_KILL_SWITCH_GLOBAL)
+    TRF_OPS -> Redis: GET system:kill_switch
+    Redis --> TRF_OPS: "false"
+    RM -> TRF_OPS: getBoolean(SYSTEM_KILL_SWITCH_PROVIDER, provider)
+    TRF_OPS -> Redis: GET system:kill_switch:alpaca
+    Redis --> TRF_OPS: "false"
+end
+
+group Gate 2: Daily Loss Limit & Position Valuation (Read-Only)
+    RM -> TRF_OPS: getDouble(RISK_CONFIG_MAX_DAILY_LOSS, provider)
+    TRF_OPS -> Redis: GET risk:config:max_daily_loss:alpaca
+    RM -> TRF_OPS: getDouble(BALANCE_STARTING_EQUITY, provider)
+    TRF_OPS -> Redis: GET balance:starting_equity:alpaca
+    RM -> TRF_OPS: getDouble(BALANCE_CASH, provider)
+    TRF_OPS -> Redis: GET balance:cash:alpaca
+    RM -> POS_OPS: calculateOpenPositionsValue(provider)
+    POS_OPS -> Redis: KEYS positions:alpaca:*
+    Redis --> POS_OPS: ["positions:alpaca:AAPL"]
+    POS_OPS -> Redis: GET market:last_price:alpaca:AAPL / market:last_price:AAPL
+    Redis --> POS_OPS: "336.87"
+end
+
+group Gate 3: Price Collar Verification (Read-Only)
+    RM -> TRF_OPS: getMarketPrice(provider, symbol)
+    TRF_OPS -> Redis: GET market:last_price:alpaca:AAPL
+    RM -> TRF_OPS: getDouble(RISK_CONFIG_PRICE_COLLAR_PCT, provider)
+    TRF_OPS -> Redis: GET risk:config:price_collar_pct:alpaca
+end
+
+group Gate 4: Velocity Sliding Window Rate Limiter (State Mutator + TTL)
+    RM -> TRF_OPS: increment("risk:velocity:sec:alpaca:1772098500", 1)
+    TRF_OPS -> Redis: INCRBY risk:velocity:sec:alpaca:1772098500 1
+    RM -> TRF_OPS: expire("risk:velocity:sec:alpaca:1772098500", 2s)
+    TRF_OPS -> Redis: EXPIRE risk:velocity:sec:alpaca:1772098500 2
+    RM -> TRF_OPS: increment("risk:velocity:min:alpaca:29534975", 1)
+    TRF_OPS -> Redis: INCRBY risk:velocity:min:alpaca:29534975 1
+    RM -> TRF_OPS: expire("risk:velocity:min:alpaca:29534975", 120s)
+    TRF_OPS -> Redis: EXPIRE risk:velocity:min:alpaca:29534975 120
+end
+
+group Gate 5 & 6: Single Order & Portfolio Concentration Caps (Read-Only)
+    RM -> TRF_OPS: getInteger(RISK_CONFIG_MAX_ORDER_QTY, provider)
+    TRF_OPS -> Redis: GET risk:config:max_order_qty:alpaca
+    RM -> TRF_OPS: getDouble(RISK_CONFIG_MAX_ORDER_VAL, provider)
+    TRF_OPS -> Redis: GET risk:config:max_order_val:alpaca
+    RM -> TRF_OPS: getDouble(RISK_CONFIG_MAX_CONCENTRATION_PCT, provider)
+    TRF_OPS -> Redis: GET risk:config:max_concentration_pct:alpaca
+end
+
+group Gate 7: Margin Lock & Pending Order Tracking (State Mutator Ops)
+    RM -> TRF_OPS: getDouble(BALANCE_BLOCKED, provider)
+    TRF_OPS -> Redis: GET balance:blocked:alpaca
+    RM -> TRF_OPS: increment("balance:blocked:alpaca", estimatedCost)
+    TRF_OPS -> Redis: INCRBYFLOAT balance:blocked:alpaca +3368.70
+    RM -> TRF_OPS: addToSet(ORDERS_PENDING, provider, orderId)
+    TRF_OPS -> Redis: SADD orders:pending:alpaca "ORD-1001"
+end
+
+RM --> SC: RiskDecision(approved=true, estimatedCost, stopLossPrice)
+deactivate RM
+
+== Phase 2: Order Dispatch & Event Broadcasting ==
+SC -> OEC: executeOrder(orderRequest)
+OEC -> CM: ExecuteOrder (gRPC)
+SC -> K_EVT: Send order-create-event (orderId, symbol, qty, price, provider)
+
+== Phase 3: Post-Trade Order Resolution & Redis Settlement (OMS) ==
+K_EVT -> OCC: Consume order-create-event
+OCC -> DB: INSERT INTO tracked_orders (order_id, status='PENDING')
+
+CM -> K_EVT: Send raw-order-update (orderId, status='FILLED', filledQty=10, filledAvgPrice=336.87)
+K_EVT -> ORS: resolveOrder(orderId, 'COMPLETED', 10, 336.87)
+activate ORS
+
+ORS -> DB: UPDATE tracked_orders SET status='COMPLETED'
+
+group Operational Settlement Group: Margin, Cash & Position Mutators
+    ORS -> TRF_OMS: increment("balance:blocked:alpaca", -estimatedCost)
+    TRF_OMS -> Redis: INCRBYFLOAT balance:blocked:alpaca -3368.70
+    
+    ORS -> TRF_OMS: removeFromSet(ORDERS_PENDING, provider, orderId)
+    TRF_OMS -> Redis: SREM orders:pending:alpaca "ORD-1001"
+    
+    ORS -> TRF_OMS: increment("balance:cash:alpaca", -executionCost)
+    TRF_OMS -> Redis: INCRBYFLOAT balance:cash:alpaca -3368.70
+    
+    ORS -> POS_OMS: settlePosition(provider, symbol, "BUY", 10)
+    POS_OMS -> TRF_OMS: getInteger(POSITIONS, provider, symbol)
+    TRF_OMS -> Redis: GET positions:alpaca:AAPL
+    Redis --> TRF_OMS: "0"
+    POS_OMS -> TRF_OMS: setInteger(POSITIONS, provider, symbol, newPos)
+    TRF_OMS -> Redis: SET positions:alpaca:AAPL "10"
+end
+
+ORS -> K_EVT: Send order-complete-event
+deactivate ORS
+
+@enduml

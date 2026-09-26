@@ -43,18 +43,6 @@ public class RiskManager {
         return providerStateManager.findProviderConfig(provider);
     }
 
-    public void markProviderInactive(String provider) {
-        providerStateManager.markProviderInactive(provider);
-    }
-
-    public void markProviderActive(String provider) {
-        providerStateManager.markProviderActive(provider);
-    }
-
-    public boolean ensureAccountCache(String provider) {
-        return providerStateManager.ensureAccountCache(provider);
-    }
-
     private String normalizeProvider(String provider) {
         return ProviderStateManager.normalizeProvider(provider);
     }
@@ -194,25 +182,6 @@ public class RiskManager {
             log.warn("RISK REJECTED: Mandatory Redis risk/account state missing for provider '{}': {}. Rejecting order {}",
                 prov, e.getMessage(), orderId);
             return new RiskDecision(false, "MISSING_RISK_STATE: " + e.getMessage(), "RISK_CONFIGURATION", estimatedCost, 0.0);
-        }
-    }
-
-    public synchronized boolean validateAndLock(String orderId, double estimatedValue, String provider) {
-        String prov = normalizeProvider(provider);
-        try {
-            double cash = redisFacade.getDouble(RedisKeyDef.BALANCE_CASH, prov);
-            double blocked = redisFacade.getDouble(RedisKeyDef.BALANCE_BLOCKED, prov);
-            double available = cash - blocked;
-            if (available >= estimatedValue) {
-                String blockedKey = RedisKeyBuilder.key(RedisKeyDef.BALANCE_BLOCKED, prov);
-                redisFacade.increment(blockedKey, estimatedValue);
-                redisFacade.addToSet(RedisKeyDef.ORDERS_PENDING, prov, orderId);
-                return true;
-            }
-            return false;
-        } catch (MissingRedisStateException e) {
-            log.warn("validateAndLock failed: Missing state in Redis for provider '{}': {}", prov, e.getMessage());
-            return false;
         }
     }
 

@@ -1,0 +1,72 @@
+@startuml price_cache_service_sequence
+title Price Cache Service & Reference Price Resolution Flow
+
+autonumber
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+
+box "Inbound Market Data Streams" #LightCyan
+participant "Connection Manager (gRPC)" as CM
+end box
+
+box "Price Cache Engine (Python Service)" #LightYellow
+participant "gRPC Stream Consumer" as GSC
+participant "PriceCacheEngine (RAM)" as RAM
+participant "Redis Flush Loop" as RFL
+end box
+
+box "Redis In-Memory Tier" #LightGreen
+participant "Redis In-Memory Store" as Redis
+end box
+
+box "Consumers & Trading Cockpit" #LightPink
+participant "TradingRedisFacade (Java OPS/OMS)" as TRF
+participant "Web App BFF (Node.js)" as BFF
+participant "Web Cockpit (Browser UI)" as UI
+end box
+
+== Phase 1: High-Frequency Tick Ingestion & RAM Buffering ==
+CM -> GSC: StreamMarketData bar_proto (symbol="AAPL", close=336.87, provider="alpaca")
+activate GSC
+GSC -> RAM: update_price("AAPL", 336.87, "alpaca")
+note right of RAM: Sub-nanosecond RAM write:\nbuffer["market:last_price:AAPL"] = "336.87"
+deactivate GSC
+
+== Phase 2: Micro-Batch Redis Flush Loop (Every 500ms) ==
+RFL -> RAM: Lock & snapshot in-memory buffer
+RAM --> RFL: snapshot = {"market:last_price:AAPL": "336.87", "market:last_price:MSFT": "499.06"}
+RAM -> RAM: local_clear_or_drain(max_batch=100)
+
+RFL -> Redis: MSET market:last_price:AAPL "336.87" market:last_price:MSFT "499.06"
+activate Redis
+Redis --> RFL: OK (Pipelined micro-batch write)
+deactivate Redis
+
+== Phase 3: ADR-005 Price Resolution in Java Services (OPS / OMS) ==
+TRF -> TRF: getMarketPrice("alpaca", "AAPL")
+activate TRF
+
+TRF -> Redis: GET market:last_price:alpaca:AAPL
+activate Redis
+Redis --> TRF: null (Provider-specific price absent)
+deactivate Redis
+
+TRF -> Redis: GET market:last_price:AAPL
+activate Redis
+Redis --> TRF: "336.87" (Global fallback price match)
+deactivate Redis
+
+TRF --> TRF: Return 336.87 (ADR-005 compliant reference price)
+deactivate TRF
+
+== Phase 4: BFF Polling & Real-Time Cockpit WebSocket Streaming ==
+loop Every 1000ms
+    BFF -> Redis: MGET market:last_price:AAPL market:last_price:MSFT
+    activate Redis
+    Redis --> BFF: ["336.87", "499.06"]
+    deactivate Redis
+    
+    BFF -> UI: ws.send({"type": "tick", "payload": {"symbol": "AAPL", "price": 336.87, "source": "redis"}})
+end
+
+@enduml

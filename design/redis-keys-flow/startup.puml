@@ -1,0 +1,87 @@
+@startuml startup_sequence
+title Startup Flow - Redis Keyspace Defaults & Provider State Activation
+
+autonumber
+skinparam BoxPadding 10
+skinparam ParticipantPadding 10
+
+box "Microservice Containers (OPS / OMS)" #LightYellow
+participant "Spring Context" as App
+participant "RedisDefaultsInitializer" as RDI
+participant "ProviderStateManager" as PSM
+participant "OrderExecutionClient" as OEC
+participant "TradingRedisFacade" as TRF
+end box
+
+box "External Services" #LightCyan
+participant "Connection Manager (gRPC)" as CM
+participant "Redis In-Memory Store" as Redis
+end box
+
+== Phase 1: Spring Boot Bootstrap & Redis Facade Instantiation ==
+App -> TRF: Instantiate TradingRedisFacade(StringRedisTemplate)
+App -> RDI: Instantiate RedisDefaultsInitializer(StringRedisTemplate)
+
+== Phase 2: Non-Destructive Redis Keyspace Default Seeding ==
+App -> RDI: run(ApplicationArguments)
+activate RDI
+loop For each RedisKeyDef symbol where isDefaultAllowed == true
+    RDI -> Redis: opsForValue().setIfAbsent("system:defaults:<key>", seedValue) [SETNX]
+    activate Redis
+    Redis --> RDI: Return true (Seeded) / false (Existing Preserved)
+    deactivate Redis
+end
+RDI --> App: Seeding Complete (e.g. system:defaults:system:kill_switch = "false")
+deactivate RDI
+
+== Phase 3: Proactive Startup Health Probing & Redis State Validation ==
+App -> OEC: @PostConstruct init()
+activate OEC
+OEC -> CM: Check gRPC Health ("alpaca")
+activate CM
+CM --> OEC: Return HEALTHY (Channel IDLE)
+deactivate CM
+
+OEC -> PSM: markProviderActive("alpaca")
+activate PSM
+
+group Operational Read Group: Mandatory Key Completeness Check
+    PSM -> PSM: getRequiredProviderKeyDefs() [Scope=PROVIDER, defaultAllowed=false]
+    loop For each required non-defaultable key def
+        PSM -> TRF: hasKey(keyName)
+        activate TRF
+        TRF -> Redis: EXISTS balance:cash:alpaca / balance:blocked:alpaca / etc.
+        activate Redis
+        Redis --> TRF: Boolean result
+        deactivate Redis
+        TRF --> PSM: boolean
+        deactivate TRF
+    end
+end
+
+alt All Mandatory Keys Exist (Completeness Passed)
+    PSM -> TRF: setString(PROVIDER_STATUS, "alpaca", "ACTIVE")
+    activate TRF
+    TRF -> Redis: SET provider:status:alpaca "ACTIVE"
+    activate Redis
+    Redis --> TRF: OK
+    deactivate Redis
+    TRF --> PSM: Void
+    deactivate TRF
+    PSM --> OEC: Return true (Provider ACTIVE in-memory and Redis)
+else Missing Required Keys (Validation Failed)
+    PSM -> TRF: setString(PROVIDER_STATUS, "alpaca", "INACTIVE")
+    activate TRF
+    TRF -> Redis: SET provider:status:alpaca "INACTIVE"
+    activate Redis
+    Redis --> TRF: OK
+    deactivate Redis
+    TRF --> PSM: Void
+    deactivate TRF
+    PSM --> OEC: Return false (Provider Marked INACTIVE)
+end
+
+deactivate PSM
+deactivate OEC
+
+@enduml

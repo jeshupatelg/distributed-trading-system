@@ -13,6 +13,7 @@ import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.StatusRuntimeException;
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -57,6 +58,7 @@ public class OrderExecutionClient {
                         providerStateManager.markProviderInactive(prov);
                         log.warn("Provider '{}' connection manager is UNREACHABLE/UNHEALTHY. Config: {}. Status set to INACTIVE.",
                                 prov, providerStateManager.formatSanitizedConfig(p));
+                        providerStateManager.reconcileProviderState(prov);
                     }
                 }
             }
@@ -168,6 +170,7 @@ public class OrderExecutionClient {
         });
     }
 
+    @PreDestroy
     public void shutdown() {
         channels.values().forEach(channel -> {
             try {
