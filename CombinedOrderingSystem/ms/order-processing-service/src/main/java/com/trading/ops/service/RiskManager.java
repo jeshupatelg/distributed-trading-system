@@ -164,7 +164,6 @@ public class RiskManager {
             // All Risk Gates Passed! Execute Margin Lock in Redis.
             String blockedKey = RedisKeyBuilder.key(RedisKeyDef.BALANCE_BLOCKED, prov);
             redisFacade.increment(blockedKey, estimatedCost);
-            redisFacade.addToSet(RedisKeyDef.ORDERS_PENDING, prov, orderId);
 
             // Compute Dynamic Stop Loss Price
             double stopLossPct = redisFacade.getDouble(RedisKeyDef.RISK_CONFIG_STOP_LOSS_PCT, prov);
@@ -192,7 +191,6 @@ public class RiskManager {
         String prov = normalizeProvider(provider);
         String blockedKey = RedisKeyBuilder.key(RedisKeyDef.BALANCE_BLOCKED, prov);
         redisFacade.increment(blockedKey, -estimatedValue);
-        redisFacade.removeFromSet(RedisKeyDef.ORDERS_PENDING, prov, orderId);
         log.info("Reverted margin lock for order {} (provider {}): freed {}", orderId, prov, estimatedValue);
     }
 

@@ -115,9 +115,6 @@ public class OrderResolutionService {
         // Clear blocked margin for provider
         redisFacade.increment(blockedKey, -estimatedBlockedMargin);
 
-        // SREM orderId from pending set
-        redisFacade.removeFromSet(RedisKeyDef.ORDERS_PENDING, provider, order.getOrderId());
-
         if ("COMPLETED".equals(status) && filledQty > 0) {
             double executionCost = filledAvgPrice * filledQty;
             String side = order.getSide().toUpperCase();
@@ -135,18 +132,11 @@ public class OrderResolutionService {
             log.info("Settled Redis cache for order {} (provider {}). Mutated cash by ${}, set position for {} to {}", 
                 order.getOrderId(), provider, ("BUY".equals(side) ? "-" : "+") + executionCost, order.getSymbol(), newPos);
         } else {
-            log.info("Settled Redis cache for failed/canceled order {}: cleared blocked margin and pending status for {}.", order.getOrderId(), provider);
+            log.info("Settled Redis cache for failed/canceled order {}: cleared blocked margin for {}.", order.getOrderId(), provider);
         }
     }
 
     private void settleCacheOnly(String orderId, String status, int filledQty, double filledAvgPrice) {
-        if (providerBeans != null) {
-            for (ProviderConfig p : providerBeans) {
-                if (p.getName() != null && !p.getName().isBlank()) {
-                    redisFacade.removeFromSet(RedisKeyDef.ORDERS_PENDING, p.getName().toLowerCase().trim(), orderId);
-                }
-            }
-        }
-        log.info("Cleared order {} from Redis pending sets across configured providers (cache-only recovery).", orderId);
+        log.info("Executed cache-only resolution for order ID: {}", orderId);
     }
 }

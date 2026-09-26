@@ -51,11 +51,10 @@ The **Runtime Signal Event Flow** specifies the end-to-end lifecycle of an incom
   - Reads single-order caps `risk:config:max_order_qty:<provider>` and `risk:config:max_order_val:<provider>`.
   - Reads portfolio concentration cap `risk:config:max_concentration_pct:<provider>`. Verifies `estimatedCost <= totalEquity * (maxConcentrationPct / 100)`.
 
-- **Gate 7: Margin Lock & Pending Order Tracking**
+- **Gate 7: Margin Lock**
   - Computes `availableCash = currentCash - blockedMargin`.
   - If `availableCash >= estimatedCost`:
     - **Locks Margin**: `INCRBYFLOAT balance:blocked:<provider> +estimatedCost`.
-    - **Tracks Order**: `SADD orders:pending:<provider> orderId`.
   - Computes dynamic stop-loss price and returns `RiskDecision(approved=true)`.
 
 ### Phase 2: Execution & Event Dispatch
@@ -68,7 +67,6 @@ The **Runtime Signal Event Flow** specifies the end-to-end lifecycle of an incom
 3. **Resolution**: OMS `OrderUpdateConsumer` triggers [`OrderResolutionService.resolveOrder()`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/ms/order-management-service/src/main/java/com/trading/oms/service/OrderResolutionService.java):
    - Updates PostgreSQL `tracked_orders` status to `"COMPLETED"`.
    - **Releases Blocked Margin**: `INCRBYFLOAT balance:blocked:<provider> -estimatedCost`.
-   - **Removes Pending Order**: `SREM orders:pending:<provider> orderId`.
    - **Settles Cash Balance**: `INCRBYFLOAT balance:cash:<provider> -executionCost` (BUY) or `+executionCost` (SELL).
    - **Settles Portfolio Position**: Invokes [`PositionStateManager.settlePosition()`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/libs/shared-models/src/main/java/com/trading/shared/state/PositionStateManager.java):
      - Reads current position (`GET positions:<provider>:<symbol>`).
@@ -104,14 +102,12 @@ graph TD
         V4["EXPIRE risk:velocity:min:<provider>:<epoch> 120s"]
     end
 
-    subgraph Margin & Pending Order Locking Ops
+    subgraph Margin Locking Ops
         L1["INCRBYFLOAT balance:blocked:<provider> +estimatedCost"]
-        L2["SADD orders:pending:<provider> orderId"]
     end
 
     subgraph Post-Trade Settlement Mutator Ops
         S1["INCRBYFLOAT balance:blocked:<provider> -estimatedCost"]
-        S2["SREM orders:pending:<provider> orderId"]
         S3["INCRBYFLOAT balance:cash:<provider> +/-executionCost"]
         S4["SET positions:<provider>:<symbol> newPos"]
     end
@@ -127,7 +123,6 @@ graph TD
 | `balance:starting_equity:<provider>` | Read-Only | `GET` | `RiskManager.evaluateAndLock` | Starting equity baseline lookup. |
 | `balance:cash:<provider>` | Read-Only / Mutator | `GET` / `INCRBYFLOAT` | `RiskManager` / `OrderResolutionService` | Cash balance lookup & post-trade settlement (`+/-cost`). |
 | `balance:blocked:<provider>` | Mutator | `INCRBYFLOAT` | `RiskManager` / `OrderResolutionService` | Margin locking (`+cost`) & margin release (`-cost`). |
-| `orders:pending:<provider>` | Set Mutator | `SADD` / `SREM` | `RiskManager` / `OrderResolutionService` | Adds pending order ID / removes on resolution. |
 | `positions:<provider>:<symbol>` | Read / Set Mutator | `GET` / `SET` | `PositionStateManager.settlePosition` | Reads position & updates share count post-fill. |
 | `market:last_price:<provider>:<symbol>`| Read-Only | `GET` | `TradingRedisFacade.getMarketPrice` | Primary market reference price lookup. |
 | `market:last_price:<symbol>` | Read-Only | `GET` | `TradingRedisFacade.getMarketPrice` | Global fallback reference price lookup. |

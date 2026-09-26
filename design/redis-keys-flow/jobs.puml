@@ -58,8 +58,6 @@ loop For each pending order
     group Operational Resolution Settlement Ops
         ERS -> TRF: increment("balance:blocked:alpaca", -estimatedCost)
         TRF -> Redis: INCRBYFLOAT balance:blocked:alpaca -3368.70
-        ERS -> TRF: removeFromSet(ORDERS_PENDING, "alpaca", "ORD-1001")
-        TRF -> Redis: SREM orders:pending:alpaca "ORD-1001"
         ERS -> TRF: increment("balance:cash:alpaca", -executionCost)
         TRF -> Redis: INCRBYFLOAT balance:cash:alpaca -3368.70
         ERS -> POS: settlePosition("alpaca", "AAPL", "BUY", 10)

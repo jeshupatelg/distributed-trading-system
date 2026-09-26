@@ -151,21 +151,21 @@ class TradingRedisFacadeTest {
     }
 
     @Test
-    @DisplayName("Should manage orders:pending set correctly")
+    @DisplayName("Should manage set operations correctly")
     void testSetOperations() {
         when(redisTemplate.opsForSet()).thenReturn(setOperations);
-        String key = "orders:pending:alpaca";
+        String key = "provider:status:alpaca";
 
-        facade.addToSet(RedisKeyDef.ORDERS_PENDING, "alpaca", "ord-123");
+        facade.addToSet(RedisKeyDef.PROVIDER_STATUS, "alpaca", "ord-123");
         verify(setOperations).add(key, "ord-123");
 
         when(setOperations.isMember(key, "ord-123")).thenReturn(true);
-        assertTrue(facade.isMemberOfSet(RedisKeyDef.ORDERS_PENDING, "alpaca", "ord-123"));
+        assertTrue(facade.isMemberOfSet(RedisKeyDef.PROVIDER_STATUS, "alpaca", "ord-123"));
 
-        facade.removeFromSet(RedisKeyDef.ORDERS_PENDING, "alpaca", "ord-123");
+        facade.removeFromSet(RedisKeyDef.PROVIDER_STATUS, "alpaca", "ord-123");
         verify(setOperations).remove(key, "ord-123");
 
         when(setOperations.members(key)).thenReturn(Set.of("ord-456"));
-        assertEquals(Set.of("ord-456"), facade.getSetMembers(RedisKeyDef.ORDERS_PENDING, "alpaca"));
+        assertEquals(Set.of("ord-456"), facade.getSetMembers(RedisKeyDef.PROVIDER_STATUS, "alpaca"));
     }
 }

@@ -21,7 +21,6 @@ This document serves as the master catalog and architectural entry point for all
 | `balance:starting_equity:<provider>` | `PROVIDER` | `Double` (numeric string) | **None** (Fail-Fast) | **No** | Day-start equity baseline captured at midnight rollover for daily loss calculation. |
 | `balance:last_reset_date:<provider>` | `PROVIDER` | `String` (ISO Date `YYYY-MM-DD`) | **None** (Fail-Fast) | **No** | Date string tracking the last daily equity rollover execution. |
 | `positions:<provider>:<symbol>` | `PROVIDER_AND_SYMBOL` | `Integer` (share count) | `system:defaults:positions` (`"0"`) | Yes (Sparse) | Current net share holdings per provider and symbol. |
-| `orders:pending:<provider>` | `PROVIDER` | `Set<String>` (Order IDs) | `system:defaults:orders:pending` (`""`) | Yes | Set of active order IDs pending broker execution response. |
 | `market:last_price:<symbol>` | `SYMBOL` | `Double` (numeric string) | **None** | **No** | Global fallback reference price written by `price-cache-service`. |
 | `market:last_price:<provider>:<symbol>` | `PROVIDER_AND_SYMBOL` | `Double` (numeric string) | **None** | **No** | Primary provider-specific market reference price. |
 | `risk:config:max_daily_loss:<provider>` | `PROVIDER` | `Double` (monetary limit) | **None** (Fail-Fast) | **No** | Maximum allowable daily equity loss threshold. |
@@ -68,13 +67,13 @@ graph TD
    - Executed by [`RiskManager`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/ms/order-processing-service/src/main/java/com/trading/ops/service/RiskManager.java) during order intake.
    - Evaluates 7 risk gates using `GET`, `EXISTS`, and `INCRBY` on sliding velocity keys (`risk:velocity:*`).
 
-3. **Margin & Order Locking (State Mutator Ops)**:
+3. **Margin Locking (State Mutator Ops)**:
    - Executed by [`RiskManager`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/ms/order-processing-service/src/main/java/com/trading/ops/service/RiskManager.java) upon risk approval.
-   - Atomically locks margin (`INCRBYFLOAT balance:blocked:<provider> +cost`) and tracks working orders (`SADD orders:pending:<provider> orderId`).
+   - Atomically locks margin (`INCRBYFLOAT balance:blocked:<provider> +cost`).
 
 4. **Post-Trade Order Resolution (State Mutator & Position Ops)**:
    - Executed by [`OrderResolutionService`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/ms/order-management-service/src/main/java/com/trading/oms/service/OrderResolutionService.java) and [`PositionStateManager`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/libs/shared-models/src/main/java/com/trading/shared/state/PositionStateManager.java) upon receiving execution fills.
-   - Releases blocked margin (`INCRBYFLOAT balance:blocked:<provider> -cost`), adjusts cash balance (`INCRBYFLOAT balance:cash:<provider> +/-cost`), updates share position (`SET positions:<provider>:<symbol>`), and removes pending order ID (`SREM orders:pending:<provider> orderId`).
+   - Releases blocked margin (`INCRBYFLOAT balance:blocked:<provider> -cost`), adjusts cash balance (`INCRBYFLOAT balance:cash:<provider> +/-cost`), and updates share position (`SET positions:<provider>:<symbol>`).
 
 5. **Scheduled Maintenance & Health Recovery (Health & Rollover Ops)**:
    - Executed by [`ProviderHealthCheckJob`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/ms/order-management-service/src/main/java/com/trading/oms/job/ProviderHealthCheckJob.java) and [`DailyEquityRefreshJob`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/ms/order-management-service/src/main/java/com/trading/oms/job/DailyEquityRefreshJob.java).

@@ -93,7 +93,6 @@ class RiskManagerTest {
         assertEquals(1500.0, decision.calculatedCost());
         assertEquals(147.0, decision.stopLossPrice(), 0.001); // 150 * (1 - 0.02)
         verify(redisFacade).increment("balance:blocked:alpaca", 1500.0);
-        verify(redisFacade).addToSet(RedisKeyDef.ORDERS_PENDING, "alpaca", "ord-1");
     }
 
     @Test

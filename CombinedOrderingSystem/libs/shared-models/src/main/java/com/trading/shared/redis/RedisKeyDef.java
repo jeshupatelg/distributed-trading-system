@@ -55,17 +55,6 @@ public enum RedisKeyDef {
             "Current position quantity in shares per provider and symbol (Sparse keyspace default = 0)"
     ),
 
-    // --- 3. Order Tracking Domain ---
-    ORDERS_PENDING(
-            "orders:pending:%s",
-            KeyScope.PROVIDER,
-            String.class,
-            true,
-            "system:defaults:orders:pending",
-            "",
-            "Set of order IDs pending exchange execution per provider"
-    ),
-
     // --- 4. Market Data Domain ---
     MARKET_LAST_PRICE_PROVIDER(
             "market:last_price:%s:%s",

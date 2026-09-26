@@ -83,13 +83,11 @@ group Gate 5 & 6: Single Order & Portfolio Concentration Caps (Read-Only)
     TRF_OPS -> Redis: GET risk:config:max_concentration_pct:alpaca
 end
 
-group Gate 7: Margin Lock & Pending Order Tracking (State Mutator Ops)
+group Gate 7: Margin Lock (State Mutator Ops)
     RM -> TRF_OPS: getDouble(BALANCE_BLOCKED, provider)
     TRF_OPS -> Redis: GET balance:blocked:alpaca
     RM -> TRF_OPS: increment("balance:blocked:alpaca", estimatedCost)
     TRF_OPS -> Redis: INCRBYFLOAT balance:blocked:alpaca +3368.70
-    RM -> TRF_OPS: addToSet(ORDERS_PENDING, provider, orderId)
-    TRF_OPS -> Redis: SADD orders:pending:alpaca "ORD-1001"
 end
 
 RM --> SC: RiskDecision(approved=true, estimatedCost, stopLossPrice)
@@ -113,9 +111,6 @@ ORS -> DB: UPDATE tracked_orders SET status='COMPLETED'
 group Operational Settlement Group: Margin, Cash & Position Mutators
     ORS -> TRF_OMS: increment("balance:blocked:alpaca", -estimatedCost)
     TRF_OMS -> Redis: INCRBYFLOAT balance:blocked:alpaca -3368.70
-    
-    ORS -> TRF_OMS: removeFromSet(ORDERS_PENDING, provider, orderId)
-    TRF_OMS -> Redis: SREM orders:pending:alpaca "ORD-1001"
     
     ORS -> TRF_OMS: increment("balance:cash:alpaca", -executionCost)
     TRF_OMS -> Redis: INCRBYFLOAT balance:cash:alpaca -3368.70

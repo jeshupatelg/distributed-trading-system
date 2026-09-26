@@ -37,13 +37,11 @@ The **Jobs Flow** specifies the background execution loops managed by `@Schedule
   3. **Order Completion Handling**: If broker status is `"filled"` or `"completed"`, delegates to [`OrderResolutionService.resolveOrder(orderId, "COMPLETED", filledQty, avgPrice)`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/ms/order-management-service/src/main/java/com/trading/oms/service/OrderResolutionService.java):
      - Updates PostgreSQL `tracked_orders` status to `"COMPLETED"`.
      - Releases blocked margin (`INCRBYFLOAT balance:blocked:<provider> -estimatedCost`).
-     - Removes pending order from set (`SREM orders:pending:<provider> orderId`).
      - Adjusts cash balance (`INCRBYFLOAT balance:cash:<provider> +/-executionCost`).
      - Settles position via [`PositionStateManager.settlePosition()`](file:///c:/Users/jeshu/Projects/distributed-trading-system/CombinedOrderingSystem/libs/shared-models/src/main/java/com/trading/shared/state/PositionStateManager.java) (`SET positions:<provider>:<symbol>`).
   4. **Order Failure Handling**: If broker status is `"canceled"`, `"rejected"`, or `"expired"`, calls `OrderResolutionService.resolveOrder(orderId, "FAILED", ...)`:
      - Updates PostgreSQL status to `"FAILED"`.
      - Releases blocked margin (`INCRBYFLOAT balance:blocked:<provider> -estimatedCost`).
-     - Removes pending order from set (`SREM orders:pending:<provider> orderId`).
 
 ### Job 3: Daily Equity Midnight Rollover (`DailyEquityRefreshJob`)
 - **Schedule**: Evaluates every minute (`cron = "0 * * * * *"`).
@@ -75,7 +73,6 @@ graph TD
 
     subgraph Order Reconciliation & Settlement Ops
         O1["INCRBYFLOAT balance:blocked:<provider> -estimatedCost"]
-        O2["SREM orders:pending:<provider> orderId"]
         O3["INCRBYFLOAT balance:cash:<provider> +/-executionCost"]
         O4["SET positions:<provider>:<symbol> newPos"]
     end
@@ -95,7 +92,6 @@ graph TD
 | `provider:status:<provider>` | Read & Write | `GET` / `SET` | `ProviderHealthCheckJob` | Inspects status & restores active health state. |
 | `balance:cash:<provider>` | Read-Only Probe | `EXISTS` | `ProviderStateManager.getMissingRequiredProviderKeys` | Validates cash balance cache completeness. |
 | `balance:blocked:<provider>` | Mutator | `INCRBYFLOAT` | `OrderResolutionService.settleCache` | Releases locked margin (`-cost`) upon resolution. |
-| `orders:pending:<provider>` | Set Mutator | `SREM` | `OrderResolutionService.settleCache` | Removes resolved order ID from pending set. |
 | `positions:<provider>:<symbol>` | Mutator | `SET` | `PositionStateManager.settlePosition` | Updates position quantity on order completion. |
 | `balance:last_reset_date:<provider>`| Read & Write | `GET` / `SET` | `DailyEquityRefreshJob` / `EquityReconciliationService` | Checks & updates daily rollover date (`YYYY-MM-DD`). |
 | `balance:starting_equity:<provider>`| Overwrite | `SET` | `EquityReconciliationService.reconcileDailyStartingEquity` | Sets opening equity baseline for daily drawdown check. |

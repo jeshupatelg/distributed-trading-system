@@ -22,7 +22,6 @@ DUMP_DIR="${DEFAULT_DUMP_DIR}"
 HARDCODED_PATTERNS=(
     "balance:*"
     "positions:*"
-    "orders:pending:*"
     "market:last_price:*"
     "system:kill_switch*"
     "provider:status:*"
@@ -30,7 +29,6 @@ HARDCODED_PATTERNS=(
     "system:defaults:*"
     "balance:cash"
     "balance:blocked"
-    "positions:*"
 )
 
 usage() {

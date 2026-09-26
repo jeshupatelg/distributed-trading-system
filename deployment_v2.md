@@ -608,8 +608,26 @@
 - **Verification**:
   - Inner-loop deployment synchronized files via `sync_project_files` and redeployed stack via `deploy_compose_stack`.
   - Verified container startup: `Trading Web Cockpit & BFF Server listening on http://0.0.0.0:3030/web-ui (context path: '/web-ui')`.
-  - Verified HTTP redirect: `GET /web-ui` returns `302 /web-ui/`, `GET /` returns `302 /web-ui/`.
-  - Verified HTML template injection: `GET /web-ui/` returns HTML containing `<base href="/web-ui/" />` and `<script>window.__CONTEXT_PATH__ = "/web-ui";</script>`.
-  - Verified REST endpoint: `GET /web-ui/api/v1/system/health` returns HTTP 200 with service health statuses.
 
 
+
+### Deployment Action 19: Removal of Dead Redis Key `ORDERS_PENDING` & Code Cleanup (2026-09-27)
+- **Objective**: 
+  1. Audit usage of Redis set key `ORDERS_PENDING` (`orders:pending:<provider>`) across the entire repository.
+  2. Remove dead write-only state operations from `RiskManager` and `OrderResolutionService`.
+  3. Purge obsolete `ORDERS_PENDING` enum definition from `RedisKeyDef` and cleanup references across design documentation and purge scripts.
+- **Root Cause & Architectural Decision**:
+  - `RiskManager` in OPS executed `SADD orders:pending:<provider> <orderId>` on margin locking, and `OrderResolutionService` in OMS executed `SREM orders:pending:<provider> <orderId>` on order resolution.
+  - However, no component in the active codebase ever read or consumed `orders:pending:<provider>`.
+  - While early LLD specifications planned for `ReconciliationJob` to poll `SMEMBERS orders:pending:<provider>`, the actual production implementation of `ReconciliationJob` uses PostgreSQL database queries (`TrackedOrderRepository.findByStatus("PENDING")`).
+  - Since PostgreSQL is the authoritative Single Source of Truth (SSOT) for order history and cold-path reconciliation (15–30s intervals) functions reliably via DB queries, maintaining `orders:pending` in Redis was dead write-only state that added unnecessary Redis network and IO overhead.
+- **Fix Applied**:
+  1. **`RedisKeyDef.java`**: Removed `ORDERS_PENDING` enum definition.
+  2. **`RiskManager.java`**: Removed `addToSet(ORDERS_PENDING...)` in `evaluateAndLock` and `removeFromSet(ORDERS_PENDING...)` in `revertLock`.
+  3. **`OrderResolutionService.java`**: Removed `removeFromSet(ORDERS_PENDING...)` calls in `settleCache` and simplified `settleCacheOnly`.
+  4. **`RiskManagerTest.java`**: Removed `verify(redisFacade).addToSet(ORDERS_PENDING...)` assertions.
+  5. **`clean_redis.sh`**: Removed `"orders:pending:*"` pattern from selective Redis key purge script.
+  6. **Architecture Specifications (`design/redis-keys-flow/`)**: Updated flow documentation (`README.md`, `runtime-signal-event.md`, `runtime-signal-event.puml`, `jobs.md`, `jobs.puml`) to reflect the simplified Redis key flow.
+- **Verification**:
+  - Full reactor build `mvn clean test` passed across all 4 modules (`CombinedOrderingSystem`, `shared-models`, `order-processing-service`, `order-management-service`) with 37 unit tests passing (0 failures, 0 errors).
+  - Confirmed 0 occurrences of `ORDERS_PENDING` remain in production application code.
