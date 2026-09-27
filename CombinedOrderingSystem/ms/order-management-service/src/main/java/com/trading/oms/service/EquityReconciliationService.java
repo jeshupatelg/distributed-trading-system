@@ -5,8 +5,10 @@ import com.trading.shared.config.ProviderConfig;
 import com.trading.shared.redis.RedisKeyDef;
 import com.trading.shared.redis.TradingRedisFacade;
 import com.trading.shared.state.PositionStateManager;
+import com.trading.shared.state.ProviderStateManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -18,13 +20,26 @@ public class EquityReconciliationService {
     private final ReconciliationClient reconciliationClient;
     private final TradingRedisFacade redisFacade;
     private final PositionStateManager positionStateManager;
+    private final ProviderStateManager providerStateManager;
+    private final boolean fallbackEnabled;
 
     public EquityReconciliationService(ReconciliationClient reconciliationClient,
                                        TradingRedisFacade redisFacade,
-                                       PositionStateManager positionStateManager) {
+                                       PositionStateManager positionStateManager,
+                                       ProviderStateManager providerStateManager,
+                                       @Value("${trading.equity-reconciliation.fallback-enabled:true}") boolean fallbackEnabled) {
         this.reconciliationClient = reconciliationClient;
         this.redisFacade = redisFacade;
         this.positionStateManager = positionStateManager;
+        this.providerStateManager = providerStateManager;
+        this.fallbackEnabled = fallbackEnabled;
+    }
+
+    public EquityReconciliationService(ReconciliationClient reconciliationClient,
+                                       TradingRedisFacade redisFacade,
+                                       PositionStateManager positionStateManager,
+                                       ProviderStateManager providerStateManager) {
+        this(reconciliationClient, redisFacade, positionStateManager, providerStateManager, true);
     }
 
     /**
@@ -42,6 +57,17 @@ public class EquityReconciliationService {
 
         String prov = providerConfig.getName().toLowerCase().trim();
 
+        // Check if provider is ACTIVE in-memory and in Redis
+        boolean isActiveInMemory = providerStateManager != null && providerStateManager.isProviderActive(prov);
+        String redisStatus = providerStateManager != null ? providerStateManager.getProviderStatus(prov) : null;
+        boolean isActiveInRedis = "ACTIVE".equalsIgnoreCase(redisStatus);
+
+        if (!isActiveInMemory || !isActiveInRedis) {
+            log.warn("Skipping daily equity reconciliation for provider '{}': provider is INACTIVE (in-memory active={}, redis status='{}').",
+                prov, isActiveInMemory, redisStatus);
+            return;
+        }
+
         try {
             log.info("Querying ground-truth account details from broker via gRPC for provider '{}' (date: {})", prov, rolloverDate);
             AccountDetailsResponse account = reconciliationClient.getAccountDetails(prov);
@@ -58,36 +84,22 @@ public class EquityReconciliationService {
                     prov, providerConfig.getExchange(), brokerEquity, brokerCash, rolloverDate);
                 return;
             } else {
-                log.warn("Broker gRPC returned 0.0 equity for provider '{}'. Falling back to internal calculation.", prov);
+                log.warn("Broker gRPC returned 0.0 equity for provider '{}'.", prov);
             }
         } catch (Exception e) {
-            log.error("Broker gRPC GetAccountDetails failed for provider '{}': {}. Falling back to internal calculation.",
-                prov, e.getMessage());
+            log.error("Broker gRPC GetAccountDetails failed for provider '{}': {}", prov, e.getMessage());
         }
 
-        // Fallback internal calculation if broker gRPC call fails
-        executeFallbackInternalReset(prov, providerConfig.getExchange(), rolloverDate);
+        // Fallback internal calculation if broker gRPC call fails (and fallback is enabled)
+        if (fallbackEnabled) {
+            log.info("Executing fallback internal daily equity calculation for provider '{}'", prov);
+            executeFallbackInternalReset(prov, providerConfig.getExchange(), rolloverDate);
+        } else {
+            log.warn("Internal fallback equity calculation is DISABLED. Skipping fallback reset for provider '{}'.", prov);
+        }
     }
 
-    /**
-     * Public reusable method for midday / on-demand UI triggers.
-     * Queries broker for live balance and resyncs Redis cash balance without resetting starting_equity.
-     */
-    public AccountDetailsResponse reconcileLiveBalance(String provider) {
-        if (provider == null || provider.isBlank()) {
-            throw new IllegalArgumentException("Provider must not be null or blank");
-        }
-        String prov = provider.toLowerCase().trim();
-        log.info("Executing mid-day / on-demand live balance reconciliation for provider '{}'", prov);
 
-        AccountDetailsResponse account = reconciliationClient.getAccountDetails(prov);
-        double brokerCash = account.getCash();
-        if (brokerCash > 0.0) {
-            redisFacade.setDouble(RedisKeyDef.BALANCE_CASH, prov, brokerCash);
-            log.info("Mid-day balance resync complete for provider '{}': cash updated to {}", prov, brokerCash);
-        }
-        return account;
-    }
 
     private void executeFallbackInternalReset(String prov, String exchange, LocalDate rolloverDate) {
         double currentCash = redisFacade.getDouble(RedisKeyDef.BALANCE_CASH, prov);
@@ -101,3 +113,4 @@ public class EquityReconciliationService {
             prov, exchange, closingEquity, rolloverDate);
     }
 }
+

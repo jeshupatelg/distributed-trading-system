@@ -34,7 +34,7 @@ public class ReconciliationJob {
     /**
      * Fallback reconciliation job that runs periodically to fetch the status of unresolved (PENDING) orders.
      */
-    @Scheduled(fixedDelayString = "${trading.reconciliation.interval-ms:30000}")
+    @Scheduled(fixedDelayString = "${trading.order-reconciliation.interval-ms:30000}")
     public void reconcilePendingOrders() {
         log.info("Starting scheduled reconciliation check for pending orders...");
         boolean success = true;
