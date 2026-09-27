@@ -25,7 +25,7 @@ public class OrderCreateConsumer {
     }
 
     @SuppressWarnings(value = "unused")
-    @KafkaListener(topics = "${trading.topics.order-create}", groupId = "oms-group")
+    @KafkaListener(topics = "${trading.topics.order-create}", groupId = "${spring.kafka.consumer.group-id}")
     public void consumeOrderCreate(String message) {
         log.info("Received order-create-event from Kafka: {}", message);
         try {

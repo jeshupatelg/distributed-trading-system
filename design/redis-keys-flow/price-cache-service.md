@@ -8,11 +8,11 @@ The **Price Cache Service Flow** specifies out-of-band market data tick processi
 
 ## PlantUML Sequence Diagram
 
-```puml
-@startuml
+<!-- ```puml
+@startuml -->
 !include price-cache-service.puml
-@enduml
-```
+<!-- @enduml
+``` -->
 
 ---
 

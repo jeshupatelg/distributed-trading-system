@@ -8,11 +8,11 @@ The **Runtime Signal Event Flow** specifies the end-to-end lifecycle of an incom
 
 ## PlantUML Sequence Diagram
 
-```puml
-@startuml
+<!-- ```puml
+@startuml -->
 !include runtime-signal-event.puml
-@enduml
-```
+<!-- @enduml
+``` -->
 
 ---
 

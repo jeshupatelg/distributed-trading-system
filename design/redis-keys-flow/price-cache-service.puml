@@ -26,7 +26,7 @@ participant "Web Cockpit (Browser UI)" as UI
 end box
 
 == Phase 1: High-Frequency Tick Ingestion & RAM Buffering ==
-CM -> GSC: StreamMarketData bar_proto (symbol="AAPL", close=336.87, provider="alpaca")
+CM -> GSC: StreamMarketData bar_proto\n(symbol="AAPL", close=336.87, provider="alpaca")
 activate GSC
 GSC -> RAM: update_price("AAPL", 336.87, "alpaca")
 note right of RAM: Sub-nanosecond RAM write:\nbuffer["market:last_price:AAPL"] = "336.87"
@@ -34,10 +34,10 @@ deactivate GSC
 
 == Phase 2: Micro-Batch Redis Flush Loop (Every 500ms) ==
 RFL -> RAM: Lock & snapshot in-memory buffer
-RAM --> RFL: snapshot = {"market:last_price:AAPL": "336.87", "market:last_price:MSFT": "499.06"}
+RAM --> RFL: snapshot =\n {"market:last_price:AAPL": "336.87",\n"market:last_price:MSFT": "499.06"}
 RAM -> RAM: local_clear_or_drain(max_batch=100)
 
-RFL -> Redis: MSET market:last_price:AAPL "336.87" market:last_price:MSFT "499.06"
+RFL -> Redis: MSET market:last_price:AAPL "336.87"\nmarket:last_price:MSFT "499.06"
 activate Redis
 Redis --> RFL: OK (Pipelined micro-batch write)
 deactivate Redis
@@ -66,7 +66,7 @@ loop Every 1000ms
     Redis --> BFF: ["336.87", "499.06"]
     deactivate Redis
     
-    BFF -> UI: ws.send({"type": "tick", "payload": {"symbol": "AAPL", "price": 336.87, "source": "redis"}})
+    BFF -> UI: ws.send({\n"type": "tick",\n"payload":\n\t{"symbol": "AAPL",\n\t"price": 336.87,\n\t"source": "redis"}})
 end
 
 @enduml

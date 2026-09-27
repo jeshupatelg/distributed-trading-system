@@ -641,3 +641,19 @@
   - Git repository on remote host is already at `709a178`.
   - Pending host reboot / connection recovery to finalize container deployment.
 
+### Deployment Action 21: Synchronize Kafka Consumer Group Config in OMS & Windows Build Lock Fix (2026-09-27)
+- **Objective**: 
+  1. Synchronize the `spring.kafka.consumer.group-id` configuration for all consumers in `order-management-service` (OMS) to match the externalized configuration pattern used in `order-processing-service` (OPS).
+  2. Resolve Windows protobuf plugin temporary file lock during reactor builds.
+- **Root Cause & Architectural Decision**:
+  - OPS externalizes `spring.kafka.consumer.group-id` in `application.yml` via `${KAFKA_CONSUMER_GROUP_SIGNALS:ops-group}` and references `${spring.kafka.consumer.group-id}` in consumer annotations. OMS previously hardcoded `"oms-group"` in `application.yml` and directly in `@KafkaListener` annotations on `OrderCreateConsumer` and `OrderUpdateConsumer`, preventing environment variable overrides for consumer group scaling in Docker Compose.
+  - On Windows, `protobuf-maven-plugin` failed during `mvn clean test` due to file handle locks when attempting to delete `protoc-dependencies` temporary directory. Setting `cleanTemporaryProtoFileDirectory` to `false` in `shared-models/pom.xml` resolves this build issue cleanly.
+- **Fix Applied**:
+  1. **`application.yml` (OMS)**: Updated `spring.kafka.consumer.group-id: ${KAFKA_CONSUMER_GROUP_OMS:oms-group}`.
+  2. **`OrderCreateConsumer.java`**: Updated `@KafkaListener` to reference `groupId = "${spring.kafka.consumer.group-id}"`.
+  3. **`OrderUpdateConsumer.java`**: Updated `@KafkaListener` to reference `groupId = "${spring.kafka.consumer.group-id}"`.
+  4. **`shared-models/pom.xml`**: Added `<cleanTemporaryProtoFileDirectory>false</cleanTemporaryProtoFileDirectory>` to `protobuf-maven-plugin` configuration.
+- **Verification**:
+  - Full reactor build `mvn clean test` passed across all 4 modules (`CombinedOrderingSystem`, `shared-models`, `order-processing-service`, `order-management-service`) with 41 unit tests passing (0 failures, 0 errors).
+
+

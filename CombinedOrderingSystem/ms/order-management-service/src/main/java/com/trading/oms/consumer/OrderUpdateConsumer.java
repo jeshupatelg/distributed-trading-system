@@ -21,7 +21,7 @@ public class OrderUpdateConsumer {
         this.objectMapper = objectMapper;
     }
 
-    @KafkaListener(topics = "${trading.topics.raw-updates}", groupId = "oms-group")
+    @KafkaListener(topics = "${trading.topics.raw-updates}", groupId = "${spring.kafka.consumer.group-id}")
     public void consumeOrderUpdate(String message) {
         log.info("Received raw-order-update event from Kafka: {}", message);
         try {
