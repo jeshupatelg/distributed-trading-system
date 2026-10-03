@@ -35,13 +35,6 @@ public class EquityReconciliationService {
         this.fallbackEnabled = fallbackEnabled;
     }
 
-    public EquityReconciliationService(ReconciliationClient reconciliationClient,
-                                       TradingRedisFacade redisFacade,
-                                       PositionStateManager positionStateManager,
-                                       ProviderStateManager providerStateManager) {
-        this(reconciliationClient, redisFacade, positionStateManager, providerStateManager, true);
-    }
-
     /**
      * Executes official daily equity rollover for a provider using direct broker gRPC query.
      * Overwrites starting_equity in Redis with ground-truth broker equity, resyncs cash balance,
