@@ -133,4 +133,25 @@ class EquityReconciliationServiceTest {
         verify(positionStateManager, never()).calculateOpenPositionsValue(anyString());
         verify(redisFacade, never()).setDouble(eq(RedisKeyDef.BALANCE_STARTING_EQUITY), anyString(), anyDouble());
     }
+
+    @Test
+    @DisplayName("Should abort fallback calculation without corrupting starting equity when calculateOpenPositionsValue throws MissingRedisStateException")
+    void testReconcileDailyStartingEquity_BrokerFails_FallbackThrowsMissingRedisState() {
+        when(providerStateManager.isProviderActive("alpaca")).thenReturn(true);
+        when(providerStateManager.getProviderStatus("alpaca")).thenReturn("ACTIVE");
+        when(reconciliationClient.getAccountDetails("alpaca")).thenThrow(new RuntimeException("gRPC Connection Error"));
+        when(redisFacade.getDouble(RedisKeyDef.BALANCE_CASH, "alpaca")).thenReturn(40000.0);
+        when(positionStateManager.calculateOpenPositionsValue("alpaca")).thenThrow(
+                new com.trading.shared.redis.MissingRedisStateException(RedisKeyDef.MARKET_LAST_PRICE_PROVIDER, "market:last_price:alpaca:NVDA")
+        );
+
+        EquityReconciliationService service = new EquityReconciliationService(
+                reconciliationClient, redisFacade, positionStateManager, providerStateManager, true);
+
+        // Should not bubble up exception or set starting equity
+        service.reconcileDailyStartingEquity(providerConfig, testDate);
+
+        verify(redisFacade, never()).setDouble(eq(RedisKeyDef.BALANCE_STARTING_EQUITY), anyString(), anyDouble());
+        verify(redisFacade, never()).setString(eq(RedisKeyDef.BALANCE_LAST_RESET_DATE), anyString(), anyString());
+    }
 }

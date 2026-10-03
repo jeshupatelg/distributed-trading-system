@@ -99,8 +99,9 @@ public class RiskManager {
                     return new RiskDecision(false, "PRICE_COLLAR_VIOLATION", "PRICE_COLLAR", estimatedCost, 0.0);
                 }
             } catch (MissingRedisStateException e) {
-                log.warn("Market reference price missing for provider '{}' symbol '{}': {}. Bypassing price collar check.",
-                    prov, symbol, e.getMessage());
+                log.warn("RISK REJECTED: Market reference price missing for provider '{}' symbol '{}': {}. Rejecting order {} due to missing feed.",
+                    prov, symbol, e.getMessage(), orderId);
+                return new RiskDecision(false, "PRICE_COLLAR_MISSING_FEED: " + e.getMessage(), "PRICE_COLLAR", estimatedCost, 0.0);
             }
 
             // 4. Velocity Rate Limiting Gates (Per Second & Per Minute Window)
@@ -235,7 +236,15 @@ public class RiskManager {
         double cash = redisFacade.getDouble(RedisKeyDef.BALANCE_CASH, prov);
         double blocked = redisFacade.getDouble(RedisKeyDef.BALANCE_BLOCKED, prov);
         double startingEquity = redisFacade.getDouble(RedisKeyDef.BALANCE_STARTING_EQUITY, prov);
-        double positionsVal = positionStateManager.calculateOpenPositionsValue(prov);
+        double positionsVal = 0.0;
+        boolean positionsValAvailable = true;
+        try {
+            positionsVal = positionStateManager.calculateOpenPositionsValue(prov);
+        } catch (MissingRedisStateException e) {
+            log.warn("Cannot calculate full open positions market value for provider '{}' risk status: {}", prov, e.getMessage());
+            positionsValAvailable = false;
+        }
+
         double totalEquity = cash + positionsVal;
         double dailyDrawdown = startingEquity - totalEquity;
         double maxDailyLoss = redisFacade.getDouble(RedisKeyDef.RISK_CONFIG_MAX_DAILY_LOSS, prov);
@@ -249,6 +258,7 @@ public class RiskManager {
         status.put("blocked_margin", blocked);
         status.put("starting_equity", startingEquity);
         status.put("open_positions_value", positionsVal);
+        status.put("open_positions_value_complete", positionsValAvailable);
         status.put("total_equity", totalEquity);
         status.put("daily_drawdown", dailyDrawdown);
         status.put("max_daily_loss", maxDailyLoss);

@@ -656,4 +656,46 @@
 - **Verification**:
   - Full reactor build `mvn clean test` passed across all 4 modules (`CombinedOrderingSystem`, `shared-models`, `order-processing-service`, `order-management-service`) with 41 unit tests passing (0 failures, 0 errors).
 
+### Deployment Action 22: Price Cache Dual-Bucket Flush, 60s Staleness TTL & Pre-computed Pattern Resolution (2026-10-02)
+- **Objective**: 
+  1. Add configurable price key expiration (TTL 60s) to eliminate key staleness risks in Redis market data.
+  2. Implement dual-bucket write strategy supporting both primary provider-scoped keys (`market:last_price:<provider>:<symbol>`) and backup symbol-scoped keys (`market:last_price:<symbol>`).
+  3. Configure a smaller, more frequent flush bucket for provider-scoped keys (100ms interval, max batch 20) vs symbol-scoped backup keys (500ms interval, max batch 100).
+  4. Replace hardcoded string key formatting with `KeyPatternResolver` supporting pattern, symbol, and both replacements with in-memory caching.
+  5. Extract symbol and provider dynamically from incoming tick protobuf bars.
+- **Root Cause & Architectural Decision**:
+  - `price-cache-service` previously only flushed global keys `market:last_price:<symbol>` with no expiration TTL (`MSET`). If feeds disconnected or symbols halted, prices persisted indefinitely in Redis, bypassing Pre-Trade Risk gates (Price Collar Gate 3 and Daily Drawdown Gate 2).
+  - Furthermore, `TradingRedisFacade.getMarketPrice(provider, symbol)` checks `market:last_price:<provider>:<symbol>` first; if an old provider-scoped key existed, it permanently masked fresh global price updates. Writing both provider-scoped and global fallback keys via Redis pipelined batches (`SET ... EX 60`) eliminates shadowing and staleness simultaneously.
+- **Fix Applied**:
+  1. **`config.py`**: Added `PRICE_TTL_SEC=60`, `PROVIDER_FLUSH_INTERVAL_SEC=0.1`, `PROVIDER_MAX_BATCH_SIZE=20`, `SYMBOL_FLUSH_INTERVAL_SEC=0.5`, `SYMBOL_MAX_BATCH_SIZE=100`, and `KeyPatternResolver` class with pre-computed template resolution and caching.
+  2. **`main.py`**: Refactored `PriceCacheEngine` with `PriceBucket` dual-buffer abstractions (`provider_bucket` and `symbol_bucket`), pipelined Redis flushes with TTL, and dynamic extraction of `symbol` and `provider` from `bar_proto` ticks.
+  3. **`test_price_cache.py`**: Added 11 unit tests verifying key pattern resolvers, isolated bucket draining, pipelined flushes with TTL, and tick attribute extraction.
+  4. **Architecture Documentation (`design/redis-keys-flow/`)**: Updated `price-cache-service.md` and `price-cache-service.puml` reflecting dual-bucket writes, 60s TTL pipelines, and pattern resolution.
+- **Verification**:
+  - Ran `python -m unittest test_price_cache.py`: 11/11 tests passed in 0.017s.
+
+### Deployment Action 23: Millisecond-Granularity TTL Support (PX), 1s Microservice Default & Docker Compose 60s Paper Override (2026-10-02)
+- **Objective**: 
+  1. Upgrade `price-cache-service` to support millisecond-granularity TTL (`px`) in Redis for sub-second price expiration.
+  2. Set microservice default TTL to 1.0s (`PRICE_TTL_SEC=1.0`) for fast-path market price expiration.
+  3. Add `PRICE_TTL_SEC=60` to `docker-compose.yml` to prevent 59-second order rejection windows against low-frequency paper trading feeds.
+  4. Enforce fail-fast behavior in `RiskManager.java` (Gate 3 Price Collar -> `PRICE_COLLAR_MISSING_FEED`) and `PositionStateManager.java` (Portfolio drawdown valuation halts on missing quote -> `MISSING_RISK_STATE`).
+- **Root Cause & Architectural Decision**:
+  - When prices are fed at high frequencies, 60s TTL is unnecessarily loose. However, setting TTL to 1.0s directly in the container without compose configuration breaks paper trading accounts where feeds arrive once every 60 seconds.
+  - Furthermore, Redis `SET ... EX` only supports integer seconds; fractional seconds require `SET ... PX <milliseconds>`.
+  - Upgrading `_execute_flush` to evaluate `ttl_ms % 1000 == 0` allows seamless switching between `ex` (integer seconds) and `px` (fractional milliseconds).
+- **Fix Applied**:
+  1. **`price-cache-service/config.py`**: Changed `PRICE_TTL_SEC`, `PROVIDER_PRICE_TTL_SEC`, and `SYMBOL_PRICE_TTL_SEC` to `float` with default `1.0`.
+  2. **`price-cache-service/main.py`**: Updated `PriceBucket` and `_execute_flush` to accept `float` TTLs and issue `pipe.set(k, v, px=ttl_ms)` for sub-second fractional durations or `ex=int(ttl_sec)` for integer durations.
+  3. **`docker-compose.yml`**: Added `PRICE_TTL_SEC=60` under `price-cache-service` environment.
+  4. **`price-cache-service/test_price_cache.py`**: Added unit test `test_pipelined_flush_with_subsecond_px_ttl` asserting `px=500` for `ttl_sec=0.5`.
+  5. **`CombinedOrderingSystem`**: Hardened Gate 3 in `RiskManager.java` and `calculateOpenPositionsValue` in `PositionStateManager.java` to propagate `MissingRedisStateException`. Added resilient handling across all callers of `calculateOpenPositionsValue`:
+     - `RiskManager.evaluateAndLock`: Rejects incoming order pre-trade (`MISSING_RISK_STATE`).
+     - `RiskManager.getRiskStatus`: Catches `MissingRedisStateException` to keep status telemetry / admin UI alive, flagging `open_positions_value_complete=false`.
+     - `EquityReconciliationService.executeFallbackInternalReset`: Catches `MissingRedisStateException`, logging an error and cleanly aborting the fallback reset to avoid corrupting `balance:starting_equity:<provider>`.
+- **Verification**:
+  - `python test_price_cache.py`: 12/12 tests passed (including integer EX and sub-second PX tests).
+  - `mvn test` in `CombinedOrderingSystem`: All modules passed with 100% test pass rate.
+
+
 

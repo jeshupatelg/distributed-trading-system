@@ -82,6 +82,7 @@ public class PositionStateManager {
      *
      * @param provider Broker provider (e.g. "alpaca")
      * @return Total aggregate market value of all open positions
+     * @throws MissingRedisStateException if a market reference price for any open position is missing or expired in Redis
      */
     public double calculateOpenPositionsValue(String provider) {
         String prov = normalizeProvider(provider);
@@ -94,13 +95,8 @@ public class PositionStateManager {
         for (Map.Entry<String, Integer> entry : positions.entrySet()) {
             String symbol = entry.getKey();
             int qty = entry.getValue();
-            try {
-                double price = redisFacade.getMarketPrice(prov, symbol);
-                totalVal += (qty * price);
-            } catch (MissingRedisStateException e) {
-                log.warn("Missing market reference price for open position calculation of symbol '{}' (provider '{}'): {}",
-                        symbol, prov, e.getMessage());
-            }
+            double price = redisFacade.getMarketPrice(prov, symbol);
+            totalVal += (qty * price);
         }
         return totalVal;
     }
@@ -111,6 +107,7 @@ public class PositionStateManager {
      * @param provider Broker provider (e.g. "alpaca")
      * @param symbol   Ticker symbol (e.g. "AAPL")
      * @return Market value of the position (shares * market price)
+     * @throws MissingRedisStateException if the market reference price for the symbol is missing or expired in Redis
      */
     public double getPositionMarketValue(String provider, String symbol) {
         int qty = getPosition(provider, symbol);

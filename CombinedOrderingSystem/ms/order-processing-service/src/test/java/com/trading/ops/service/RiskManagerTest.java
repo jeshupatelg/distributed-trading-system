@@ -1,6 +1,7 @@
 package com.trading.ops.service;
 
 import com.trading.shared.config.ProviderConfig;
+import com.trading.shared.redis.MissingRedisStateException;
 import com.trading.shared.redis.RedisKeyDef;
 import com.trading.shared.redis.TradingRedisFacade;
 import com.trading.shared.state.PositionStateManager;
@@ -11,6 +12,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -105,6 +108,76 @@ class RiskManagerTest {
         assertFalse(decision.approved());
         assertEquals("KILL_SWITCH_ACTIVE", decision.reason());
         assertEquals("KILL_SWITCH", decision.riskGateLevel());
+    }
+
+    @Test
+    @DisplayName("Should reject order with PRICE_COLLAR_MISSING_FEED when Gate 3 reference price is missing")
+    void testEvaluateAndLock_MissingReferencePrice() {
+        when(redisFacade.getBoolean(RedisKeyDef.SYSTEM_KILL_SWITCH_GLOBAL)).thenReturn(false);
+        when(redisFacade.getBoolean(RedisKeyDef.SYSTEM_KILL_SWITCH_PROVIDER, "alpaca")).thenReturn(false);
+        when(providerStateManager.findProviderConfig("alpaca")).thenReturn(alpacaConfig);
+        when(redisFacade.hasKey("balance:cash:alpaca")).thenReturn(true);
+
+        when(redisFacade.getDouble(RedisKeyDef.RISK_CONFIG_MAX_DAILY_LOSS, "alpaca")).thenReturn(5000.0);
+        when(redisFacade.getDouble(RedisKeyDef.BALANCE_STARTING_EQUITY, "alpaca")).thenReturn(100000.0);
+        when(redisFacade.getDouble(RedisKeyDef.BALANCE_CASH, "alpaca")).thenReturn(90000.0);
+        when(redisFacade.getDouble(RedisKeyDef.BALANCE_BLOCKED, "alpaca")).thenReturn(0.0);
+        when(positionStateManager.calculateOpenPositionsValue("alpaca")).thenReturn(10000.0);
+
+        when(redisFacade.getMarketPrice("alpaca", "AAPL")).thenThrow(
+                new MissingRedisStateException(RedisKeyDef.MARKET_LAST_PRICE_PROVIDER, "market:last_price:alpaca:AAPL")
+        );
+
+        RiskManager.RiskDecision decision = riskManager.evaluateAndLock("ord-1", "AAPL", 10, 150.0, "BUY", "alpaca");
+
+        assertFalse(decision.approved());
+        assertTrue(decision.reason().startsWith("PRICE_COLLAR_MISSING_FEED"));
+        assertEquals("PRICE_COLLAR", decision.riskGateLevel());
+    }
+
+    @Test
+    @DisplayName("Should reject order with MISSING_RISK_STATE when open positions calculation fails due to missing price")
+    void testEvaluateAndLock_MissingPositionPrice_DrawdownFailFast() {
+        when(redisFacade.getBoolean(RedisKeyDef.SYSTEM_KILL_SWITCH_GLOBAL)).thenReturn(false);
+        when(redisFacade.getBoolean(RedisKeyDef.SYSTEM_KILL_SWITCH_PROVIDER, "alpaca")).thenReturn(false);
+        when(providerStateManager.findProviderConfig("alpaca")).thenReturn(alpacaConfig);
+        when(redisFacade.hasKey("balance:cash:alpaca")).thenReturn(true);
+
+        when(redisFacade.getDouble(RedisKeyDef.RISK_CONFIG_MAX_DAILY_LOSS, "alpaca")).thenReturn(5000.0);
+        when(redisFacade.getDouble(RedisKeyDef.BALANCE_STARTING_EQUITY, "alpaca")).thenReturn(100000.0);
+        when(redisFacade.getDouble(RedisKeyDef.BALANCE_CASH, "alpaca")).thenReturn(90000.0);
+        when(redisFacade.getDouble(RedisKeyDef.BALANCE_BLOCKED, "alpaca")).thenReturn(0.0);
+        when(positionStateManager.calculateOpenPositionsValue("alpaca")).thenThrow(
+                new MissingRedisStateException(RedisKeyDef.MARKET_LAST_PRICE_PROVIDER, "market:last_price:alpaca:NVDA")
+        );
+
+        RiskManager.RiskDecision decision = riskManager.evaluateAndLock("ord-1", "AAPL", 10, 150.0, "BUY", "alpaca");
+
+        assertFalse(decision.approved());
+        assertTrue(decision.reason().startsWith("MISSING_RISK_STATE"));
+        assertEquals("RISK_CONFIGURATION", decision.riskGateLevel());
+    }
+
+    @Test
+    @DisplayName("Should handle missing market price gracefully when reporting risk status telemetry")
+    void testGetRiskStatus_PositionsMissingPrice() {
+        when(redisFacade.getDouble(RedisKeyDef.BALANCE_CASH, "alpaca")).thenReturn(50000.0);
+        when(redisFacade.getDouble(RedisKeyDef.BALANCE_BLOCKED, "alpaca")).thenReturn(1000.0);
+        when(redisFacade.getDouble(RedisKeyDef.BALANCE_STARTING_EQUITY, "alpaca")).thenReturn(100000.0);
+        when(redisFacade.getDouble(RedisKeyDef.RISK_CONFIG_MAX_DAILY_LOSS, "alpaca")).thenReturn(5000.0);
+        when(redisFacade.getBoolean(RedisKeyDef.SYSTEM_KILL_SWITCH_GLOBAL)).thenReturn(false);
+        when(redisFacade.getBoolean(RedisKeyDef.SYSTEM_KILL_SWITCH_PROVIDER, "alpaca")).thenReturn(false);
+
+        when(positionStateManager.calculateOpenPositionsValue("alpaca")).thenThrow(
+                new MissingRedisStateException(RedisKeyDef.MARKET_LAST_PRICE_PROVIDER, "market:last_price:alpaca:NVDA")
+        );
+
+        Map<String, Object> status = riskManager.getRiskStatus("alpaca");
+
+        assertNotNull(status);
+        assertEquals(0.0, status.get("open_positions_value"));
+        assertEquals(false, status.get("open_positions_value_complete"));
+        assertEquals(50000.0, status.get("total_equity")); // cash + 0
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.trading.oms.service;
 
 import com.trading.connection.grpc.AccountDetailsResponse;
 import com.trading.shared.config.ProviderConfig;
+import com.trading.shared.redis.MissingRedisStateException;
 import com.trading.shared.redis.RedisKeyDef;
 import com.trading.shared.redis.TradingRedisFacade;
 import com.trading.shared.state.PositionStateManager;
@@ -95,15 +96,20 @@ public class EquityReconciliationService {
 
 
     private void executeFallbackInternalReset(String prov, String exchange, LocalDate rolloverDate) {
-        double currentCash = redisFacade.getDouble(RedisKeyDef.BALANCE_CASH, prov);
-        double positionsVal = positionStateManager.calculateOpenPositionsValue(prov);
-        double closingEquity = currentCash + positionsVal;
+        try {
+            double currentCash = redisFacade.getDouble(RedisKeyDef.BALANCE_CASH, prov);
+            double positionsVal = positionStateManager.calculateOpenPositionsValue(prov);
+            double closingEquity = currentCash + positionsVal;
 
-        redisFacade.setDouble(RedisKeyDef.BALANCE_STARTING_EQUITY, prov, closingEquity);
-        redisFacade.setString(RedisKeyDef.BALANCE_LAST_RESET_DATE, prov, rolloverDate.toString());
+            redisFacade.setDouble(RedisKeyDef.BALANCE_STARTING_EQUITY, prov, closingEquity);
+            redisFacade.setString(RedisKeyDef.BALANCE_LAST_RESET_DATE, prov, rolloverDate.toString());
 
-        log.info("FALLBACK DAILY EQUITY RESET COMPLETE for provider '{}' ({}): starting_equity set to {} for date {}",
-            prov, exchange, closingEquity, rolloverDate);
+            log.info("FALLBACK DAILY EQUITY RESET COMPLETE for provider '{}' ({}): starting_equity set to {} for date {}",
+                prov, exchange, closingEquity, rolloverDate);
+        } catch (MissingRedisStateException e) {
+            log.error("Failed to execute fallback daily equity reset for provider '{}' ({}): missing required Redis state: {}. Aborting equity reset to avoid corrupting starting baseline.",
+                prov, exchange, e.getMessage());
+        }
     }
 }
 

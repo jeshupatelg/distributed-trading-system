@@ -11,8 +11,10 @@ end box
 
 box "Price Cache Engine (Python Service)" #LightYellow
 participant "gRPC Stream Consumer" as GSC
-participant "PriceCacheEngine (RAM)" as RAM
-participant "Redis Flush Loop" as RFL
+participant "KeyPatternResolver" as KPR
+participant "Dual-Bucket RAM (Provider & Symbol)" as RAM
+participant "Provider Flush Loop (100ms)" as PFL
+participant "Symbol Flush Loop (500ms)" as SFL
 end box
 
 box "Redis In-Memory Tier" #LightGreen
@@ -25,21 +27,32 @@ participant "Web App BFF (Node.js)" as BFF
 participant "Web Cockpit (Browser UI)" as UI
 end box
 
-== Phase 1: High-Frequency Tick Ingestion & RAM Buffering ==
+== Phase 1: High-Frequency Tick Ingestion & Dual-Bucket Buffering ==
 CM -> GSC: StreamMarketData bar_proto\n(symbol="AAPL", close=336.87, provider="alpaca")
 activate GSC
+GSC -> GSC: Extract symbol="AAPL", provider="alpaca" from bar_proto
+GSC -> KPR: get_provider_key("alpaca", "AAPL") & get_symbol_key("AAPL")
+activate KPR
+KPR --> GSC: provider_key="market:last_price:alpaca:AAPL",\nsymbol_key="market:last_price:AAPL"
+deactivate KPR
+
 GSC -> RAM: update_price("AAPL", 336.87, "alpaca")
-note right of RAM: Sub-nanosecond RAM write:\nbuffer["market:last_price:AAPL"] = "336.87"
+note right of RAM: Sub-nanosecond RAM dual write:\nprovider_bucket["market:last_price:alpaca:AAPL"] = "336.87"\nsymbol_bucket["market:last_price:AAPL"] = "336.87"
 deactivate GSC
 
-== Phase 2: Micro-Batch Redis Flush Loop (Every 500ms) ==
-RFL -> RAM: Lock & snapshot in-memory buffer
-RAM --> RFL: snapshot =\n {"market:last_price:AAPL": "336.87",\n"market:last_price:MSFT": "499.06"}
-RAM -> RAM: local_clear_or_drain(max_batch=100)
-
-RFL -> Redis: MSET market:last_price:AAPL "336.87"\nmarket:last_price:MSFT "499.06"
+== Phase 2: Dual Micro-Batch Redis Flush Loops with TTL ==
+PFL -> RAM: Lock & drain provider bucket (max_batch=20)
+RAM --> PFL: snapshot = {"market:last_price:alpaca:AAPL": "336.87"}
+PFL -> Redis: PIPELINE SET market:last_price:alpaca:AAPL "336.87" EX 60
 activate Redis
-Redis --> RFL: OK (Pipelined micro-batch write)
+Redis --> PFL: OK (High-frequency provider flush: 100ms, TTL 60s)
+deactivate Redis
+
+SFL -> RAM: Lock & drain symbol bucket (max_batch=100)
+RAM --> SFL: snapshot = {"market:last_price:AAPL": "336.87"}
+SFL -> Redis: PIPELINE SET market:last_price:AAPL "336.87" EX 60
+activate Redis
+Redis --> SFL: OK (Backup symbol flush: 500ms, TTL 60s)
 deactivate Redis
 
 == Phase 3: ADR-005 Price Resolution in Java Services (OPS / OMS) ==
@@ -48,12 +61,7 @@ activate TRF
 
 TRF -> Redis: GET market:last_price:alpaca:AAPL
 activate Redis
-Redis --> TRF: null (Provider-specific price absent)
-deactivate Redis
-
-TRF -> Redis: GET market:last_price:AAPL
-activate Redis
-Redis --> TRF: "336.87" (Global fallback price match)
+Redis --> TRF: "336.87" (Primary provider price match)
 deactivate Redis
 
 TRF --> TRF: Return 336.87 (ADR-005 compliant reference price)

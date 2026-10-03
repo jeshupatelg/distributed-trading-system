@@ -82,23 +82,19 @@ class PositionStateManagerTest {
     }
 
     @Test
-    void calculateOpenPositionsValue_handlesMissingMarketPriceGracefully() {
+    void calculateOpenPositionsValue_throwsOnMissingMarketPrice() {
         when(redisFacade.keys("positions:alpaca:*")).thenReturn(Set.of(
-                "positions:alpaca:AAPL",
                 "positions:alpaca:NVDA"
         ));
-        when(redisFacade.getString("positions:alpaca:AAPL")).thenReturn("10");
         when(redisFacade.getString("positions:alpaca:NVDA")).thenReturn("5");
 
-        when(redisFacade.getMarketPrice("alpaca", "AAPL")).thenReturn(150.0);
         when(redisFacade.getMarketPrice("alpaca", "NVDA")).thenThrow(
                 new MissingRedisStateException(RedisKeyDef.MARKET_LAST_PRICE_PROVIDER, "market:last_price:alpaca:NVDA")
         );
 
-        // NVDA omitted due to missing price; AAPL evaluated (10 * 150 = 1500)
-        double totalValue = positionStateManager.calculateOpenPositionsValue("alpaca");
-
-        assertEquals(1500.0, totalValue, 0.001);
+        assertThrows(MissingRedisStateException.class, () ->
+                positionStateManager.calculateOpenPositionsValue("alpaca")
+        );
     }
 
     @Test
