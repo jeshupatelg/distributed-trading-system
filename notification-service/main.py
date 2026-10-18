@@ -180,6 +180,61 @@ async def send_test_notification(req: TestNotificationRequest):
     return {"status": "dispatched", "channel_results": results}
 
 
+@app.post("/api/v1/notify/alertmanager")
+async def alertmanager_webhook(payload: Dict[str, Any]):
+    """Webhook receiver for Prometheus Alertmanager notifications."""
+    r = config.get_redis_client()
+    cfg = config.get_active_config(r)
+
+    common_labels = payload.get("commonLabels", {})
+    alert_name = common_labels.get("alertname", "UnknownRule")
+    status = payload.get("status", "firing")
+    logger.info("Received Alertmanager webhook: [%s] %s with %d alerts", 
+                status.upper(), alert_name, len(payload.get("alerts", [])))
+
+    results = {}
+
+    # 1. Telegram Dispatch
+    if cfg.get("telegram_enabled") and cfg.get("telegram_token") and cfg.get("telegram_chat_id"):
+        text = formatter.format_alertmanager_telegram(payload)
+        topic_id = cfg.get("telegram_topic_id")
+        tg_success = await send_telegram(
+            cfg["telegram_token"], 
+            cfg["telegram_chat_id"], 
+            text, 
+            message_thread_id=topic_id
+        )
+        results["telegram"] = {"success": tg_success}
+
+    # 2. ntfy Dispatch
+    if cfg.get("ntfy_enabled") and cfg.get("ntfy_url") and cfg.get("ntfy_topic"):
+        title, body, priority, tags = formatter.format_alertmanager_ntfy(payload)
+        ntfy_success = await send_ntfy(
+            cfg["ntfy_url"],
+            cfg["ntfy_topic"],
+            title,
+            body,
+            priority=priority,
+            tags=tags,
+            token=cfg.get("ntfy_token")
+        )
+        results["ntfy"] = {"success": ntfy_success}
+
+    # 3. Evolution API (WhatsApp) Dispatch
+    if cfg.get("evolution_enabled") and cfg.get("evolution_url") and cfg.get("evolution_instance") and cfg.get("evolution_recipient"):
+        wa_text = formatter.format_alertmanager_whatsapp(payload)
+        wa_success = await send_evolution_whatsapp(
+            cfg["evolution_url"],
+            cfg.get("evolution_apikey"),
+            cfg["evolution_instance"],
+            cfg["evolution_recipient"],
+            wa_text
+        )
+        results["evolution"] = {"success": wa_success}
+
+    return {"status": "dispatched", "alertname": alert_name, "channel_results": results}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8085)

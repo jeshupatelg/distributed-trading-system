@@ -1,0 +1,79 @@
+groups:
+  - name: trading_system_infrastructure
+    rules:
+      # 1. Dead-Man's Switch: Any monitored instance goes down
+      - alert: ServiceInstanceDown
+        expr: up == 0
+        for: 30s
+        labels:
+          severity: critical
+          tier: infrastructure
+        annotations:
+          summary: "Service instance {{ $labels.instance }} is DOWN"
+          description: "Target {{ $labels.instance }} (job '{{ $labels.job }}') has been unreachable for more than 30 seconds."
+
+      # 2. Market Data Feed Ingestion Halt
+      - alert: AlpacaTickFeedHalted
+        expr: rate(alpaca_ticks_ingested_total[1m]) == 0
+        for: 45s
+        labels:
+          severity: critical
+          tier: market-data
+        annotations:
+          summary: "Alpaca market feed ingestion halted"
+          description: "Zero ticks received from Alpaca WebSocket feed over the last 45 seconds for tracked symbols."
+
+      # 3. High Kafka Consumer Lag (Reconciliation / Notification Backpressure)
+      - alert: KafkaConsumerLagHigh
+        expr: kafka_consumergroup_lag > 250
+        for: 2m
+        labels:
+          severity: warning
+          tier: messaging
+        annotations:
+          summary: "High Kafka consumer lag on group {{ $labels.consumergroup }}"
+          description: "Consumer group '{{ $labels.consumergroup }}' has a message lag of {{ $value }} (> 250) on topic '{{ $labels.topic }}'."
+
+      # 4. Spike in Order Rejections (Risk Gates or Broker Rejections)
+      - alert: HighOrderRejectionRate
+        expr: rate(oms_orders_rejected_total[2m]) > 5
+        for: 1m
+        labels:
+          severity: warning
+          tier: risk-engine
+        annotations:
+          summary: "Abnormal order rejection rate: {{ $value | printf \"%.2f\" }} / sec"
+          description: "Orders are failing pre-trade risk gates or broker validation at a rate > 5 per second."
+
+      # 5. Envoy Load Balancer Upstream Degradation
+      - alert: TickLbHighUpstreamLatency
+        expr: envoy_cluster_upstream_rq_time_p99 > 50
+        for: 1m
+        labels:
+          severity: warning
+          tier: networking
+        annotations:
+          summary: "Envoy Tick-LB p99 latency > 50ms"
+          description: "Envoy upstream cluster response time is exceeding 50ms at the 99th percentile."
+
+      # 6. Database Connection Pool Saturation
+      - alert: HikariCpConnectionPoolExhaustion
+        expr: (hikaricp_connections_active / hikaricp_connections_max) > 0.85
+        for: 1m
+        labels:
+          severity: warning
+          tier: database
+        annotations:
+          summary: "HikariCP active connections > 85% in {{ $labels.instance }}"
+          description: "Postgres connection pool is nearing exhaustion in instance {{ $labels.instance }}."
+
+      # 7. High JVM Heap Utilization
+      - alert: JvmHeapUsageHigh
+        expr: (jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"}) > 0.90
+        for: 2m
+        labels:
+          severity: warning
+          tier: runtime
+        annotations:
+          summary: "JVM Heap usage > 90% in {{ $labels.instance }}"
+          description: "JVM Heap usage is at {{ $value | printf \"%.2f\" }}% of capacity in {{ $labels.instance }}."

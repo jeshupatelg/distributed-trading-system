@@ -8,6 +8,14 @@ datasources:
     isDefault: true
     jsonData:
       httpMethod: POST
+      manageAlerts: true
+
+  - name: Alertmanager
+    type: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    jsonData:
+      implementation: prometheus
 
   - name: PostgreSQL
     type: postgres

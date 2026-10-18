@@ -1,0 +1,24 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname', 'tier', 'severity']
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 30m
+  receiver: 'notification-service-webhook'
+
+inhibit_rules:
+  # Suppress secondary lag and DB warnings if the core service instance is down
+  - source_match:
+      alertname: 'ServiceInstanceDown'
+    target_match_re:
+      alertname: '.*(Lag|ConnectionPool|HeapUsage).*'
+    equal: ['instance']
+
+receivers:
+  - name: 'notification-service-webhook'
+    webhook_configs:
+      - url: 'http://notification-service:8085/api/v1/notify/alertmanager'
+        send_resolved: true
+        max_alerts: 10

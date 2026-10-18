@@ -239,3 +239,98 @@ def format_complete_whatsapp(data: dict) -> str:
         f"• *Strategy:* {strategy} | *Provider:* {provider}\n"
         f"• *Broker Order ID:* {order_id[:18]}..."
     )
+
+
+# ==========================================
+# 4. RULE-DRIVEN ALERTMANAGER FORMATTERS
+# ==========================================
+def format_alertmanager_telegram(payload: dict) -> str:
+    status = payload.get("status", "firing").upper()
+    is_firing = status == "FIRING"
+    icon = "🚨" if is_firing else "✅"
+    
+    common_labels = payload.get("commonLabels", {})
+    alert_name = common_labels.get("alertname", "RuleAlert")
+    severity = common_labels.get("severity", "unknown").upper()
+    tier = common_labels.get("tier", "system")
+    
+    common_ann = payload.get("commonAnnotations", {})
+    summary = common_ann.get("summary", alert_name)
+    desc = common_ann.get("description", "")
+    
+    alerts = payload.get("alerts", [])
+    alert_count = len(alerts)
+    
+    header = f"{icon} <b>RULE ALERT: [{status}] {alert_name}</b>\n━━━━━━━━━━━━━━━━━━━━━━\n"
+    meta = (
+        f"• <b>Severity:</b> <code>{severity}</code>\n"
+        f"• <b>Tier:</b> <code>{tier}</code>\n"
+        f"• <b>Active Alerts Count:</b> {alert_count}\n"
+        f"• <b>Summary:</b> {summary}\n"
+    )
+    if desc:
+        meta += f"• <b>Description:</b> {desc}\n"
+        
+    details = ""
+    if alert_count > 1:
+        details = "\n<b>Instances:</b>\n"
+        for a in alerts[:5]:  # limit to top 5 instances
+            inst = a.get("labels", {}).get("instance", "N/A")
+            details += f"  - <code>{inst}</code>\n"
+        if alert_count > 5:
+            details += f"  <i>...and {alert_count - 5} more</i>\n"
+
+    return header + meta + details
+
+
+def format_alertmanager_ntfy(payload: dict) -> tuple[str, str, str, list[str]]:
+    status = payload.get("status", "firing").upper()
+    is_firing = status == "FIRING"
+    common_labels = payload.get("commonLabels", {})
+    alert_name = common_labels.get("alertname", "RuleAlert")
+    severity = common_labels.get("severity", "warning").lower()
+    
+    common_ann = payload.get("commonAnnotations", {})
+    summary = common_ann.get("summary", alert_name)
+    desc = common_ann.get("description", "")
+    
+    icon = "🚨" if is_firing else "✅"
+    title = f"{icon} [{status}] {summary}"
+    
+    body = f"**Status:** {status} | **Severity:** {severity.upper()}\n"
+    if desc:
+        body += f"\n{desc}\n"
+        
+    alerts = payload.get("alerts", [])
+    if len(alerts) > 1:
+        body += f"\n**Active Instances ({len(alerts)}):**\n"
+        for a in alerts[:5]:
+            body += f"- `{a.get('labels', {}).get('instance', 'N/A')}`\n"
+            
+    priority = "urgent" if (is_firing and severity == "critical") else "high" if is_firing else "default"
+    tags = ["rotating_light", "warning"] if is_firing else ["white_check_mark"]
+    return title, body, priority, tags
+
+
+def format_alertmanager_whatsapp(payload: dict) -> str:
+    status = payload.get("status", "firing").upper()
+    is_firing = status == "FIRING"
+    icon = "🚨" if is_firing else "✅"
+    
+    common_labels = payload.get("commonLabels", {})
+    alert_name = common_labels.get("alertname", "RuleAlert")
+    severity = common_labels.get("severity", "unknown").upper()
+    tier = common_labels.get("tier", "system")
+    
+    common_ann = payload.get("commonAnnotations", {})
+    summary = common_ann.get("summary", alert_name)
+    desc = common_ann.get("description", "")
+    
+    return (
+        f"*{icon} RULE ALERT: [{status}] {alert_name}*\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"• *Severity:* {severity}\n"
+        f"• *Tier:* {tier}\n"
+        f"• *Summary:* {summary}\n"
+        f"• *Description:* {desc}"
+    )

@@ -697,5 +697,36 @@
   - `python test_price_cache.py`: 12/12 tests passed (including integer EX and sub-second PX tests).
   - `mvn test` in `CombinedOrderingSystem`: All modules passed with 100% test pass rate.
 
+### Deployment Action 24: Rule-Driven Alerting Infrastructure (Prometheus Rules, Alertmanager & Hybrid Grafana Integration) (2026-10-19)
+- **Objective**: 
+  1. Add rule-driven alerting to complement purely event-driven Kafka trade notifications.
+  2. Implement dead-man's switches, continuous market feed monitoring, backpressure detection, and order rejection spike detection.
+  3. Deploy Prometheus Alertmanager to handle alert grouping, inhibition, and deduplication.
+  4. Enable the hybrid rule management model: core infrastructure rules managed via GitOps YAML, while allowing interactive UI-driven rule creation and threshold tuning via Grafana Alerting.
+  5. Route Alertmanager firing/resolved notifications through the existing multi-channel `notification-service` without duplicating credentials.
+- **Root Cause & Architectural Decision**:
+  - Event-driven alerting only fires when a discrete Kafka message is produced. If a microservice crashes, network partitions occur, or feeds stall, **no event is generated**, leaving operators blind to outages. Furthermore, rapid cascading rejections cause alert storms and channel rate-limits.
+  - Adding Prometheus evaluation rules and Alertmanager provides continuous metric-state evaluation with sliding windows, automatic group deduplication, and cascading alert inhibition.
+  - Forwarding Alertmanager alerts to `notification-service/api/v1/notify/alertmanager` preserves centralized multi-channel routing (Telegram, Ntfy, WhatsApp) and respects dynamic Redis settings.
+- **Fix Applied**:
+  1. **`config/observability/alert_rules.yml`**: Created production PromQL alert rules for:
+     - `ServiceInstanceDown` (dead-man switch, `up == 0` for 30s).
+     - `AlpacaTickFeedHalted` (`rate(alpaca_ticks_ingested_total[1m]) == 0` for 45s).
+     - `KafkaConsumerLagHigh` (`kafka_consumergroup_lag > 250` for 2m).
+     - `HighOrderRejectionRate` (`rate(oms_orders_rejected_total[2m]) > 5` for 1m).
+     - `TickLbHighUpstreamLatency` (Envoy upstream p99 latency > 50ms).
+     - `HikariCpConnectionPoolExhaustion` (DB active connections > 85%).
+     - `JvmHeapUsageHigh` (JVM heap utilization > 90%).
+  2. **`config/observability/alertmanager.yml`**: Configured Alertmanager grouping, 5m resolve timeout, inhibition rules, and webhook receiver pointing to `http://notification-service:8085/api/v1/notify/alertmanager`.
+  3. **`config/observability/prometheus.yml`**: Added `rule_files: ['/etc/prometheus/alert_rules.yml']` and `alerting: alertmanagers` pointing to `alertmanager:9093`.
+  4. **`config/observability/grafana/provisioning/datasources/datasources.yaml`**: Enabled `manageAlerts: true` on Prometheus datasource and provisioned `Alertmanager` datasource on `http://alertmanager:9093` for seamless Grafana UI alert management.
+  5. **`notification-service/formatter.py`**: Added Alertmanager formatters for Telegram (`format_alertmanager_telegram`), Ntfy (`format_alertmanager_ntfy`), and WhatsApp (`format_alertmanager_whatsapp`).
+  6. **`notification-service/main.py`**: Added `/api/v1/notify/alertmanager` webhook receiver endpoint dispatching alerts to configured channels.
+  7. **`notification-service/test_alertmanager_webhook.py`**: Created unit tests verifying firing/resolved formatters and webhook dispatch.
+  8. **`docker-compose.yml`**: Added `alertmanager` container on port `9093:9093`, mounted `alert_rules.yml` into `prometheus`, and connected both to `default` and `gateway_net`.
+- **Verification**:
+  - `python -m unittest test_alertmanager_webhook.py`: All formatter and webhook tests passed.
+  - Zero-downtime hot-reload capability confirmed via `curl -X POST http://localhost:9091/-/reload`.
+
 
 
